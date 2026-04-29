@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta, date
 from typing import List, Optional
 
@@ -10,12 +11,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, Column, Integer, String, Date, DateTime, ForeignKey, Text, func
 from sqlalchemy.orm import declarative_base, sessionmaker, Session, relationship
 
-DATABASE_URL = "sqlite:///./intervencoes.db"
-SECRET_KEY = "troque-esta-chave-em-producao"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 480
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./intervencoes.db")
+SECRET_KEY = os.getenv("SECRET_KEY", "troque-esta-chave-em-producao")
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "480"))
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+engine = create_engine(DATABASE_URL, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -51,9 +53,12 @@ class Intervencao(Base):
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Sistema de Intervenção Farmacêutica", version="1.0.0")
+
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[origin.strip() for origin in allowed_origins if origin.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
