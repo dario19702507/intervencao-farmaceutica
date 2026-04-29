@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import './style.css';
 
-const API='http://127.0.0.1:8000';
+const API = import.meta.env.VITE_API_URL';
 const hoje = new Date().toISOString().slice(0,10);
 function authHeaders(){return {Authorization:`Bearer ${localStorage.getItem('token')}`, 'Content-Type':'application/json'}}
 function objToChart(obj){return Object.entries(obj||{}).map(([name,value])=>({name,value}))}
