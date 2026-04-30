@@ -28,6 +28,7 @@ function App() {
   const [usuarios, setUsuarios] = useState([]);
   const [msg, setMsg] = useState('');
   const [tab, setTab] = useState('intervencoes');
+  const [editandoId, setEditandoId] = useState(null);
 
   const [novoUsuario, setNovoUsuario] = useState({
     nome: '',
@@ -120,30 +121,60 @@ async function exportarCSV() {
     if (token) load();
   }, [token]);
 
-  async function salvar(e) {
-    e.preventDefault();
+ async function salvar(e) {
+  e.preventDefault();
 
-    const r = await fetch(`${API}/intervencoes`, {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify(form),
-    });
+  const url = editandoId
+    ? `${API}/intervencoes/${editandoId}`
+    : `${API}/intervencoes`;
 
-    if (!r.ok) {
-      setMsg('Erro ao salvar. Confira os campos.');
-      return;
-    }
+  const method = editandoId ? 'PUT' : 'POST';
 
-    setMsg('Intervenção registrada com sucesso.');
-    setForm({
-      ...form,
-      paciente_nome: '',
-      data_nascimento: '',
-      observacoes: '',
-    });
+  const r = await fetch(url, {
+    method,
+    headers: authHeaders(),
+    body: JSON.stringify(form),
+  });
 
-    load();
+  if (!r.ok) {
+    setMsg(editandoId ? 'Erro ao atualizar.' : 'Erro ao salvar. Confira os campos.');
+    return;
   }
+
+  setMsg(editandoId ? 'Intervenção atualizada com sucesso.' : 'Intervenção registrada com sucesso.');
+
+  setForm({
+    data_atendimento: hoje,
+    paciente_nome: '',
+    data_nascimento: '',
+    tipo_atendimento: 'Presencial',
+    motivo_atendimento: 'Documentação (inclusão/renovação/adequação)',
+    comorbidade: 'Asma/DPOC',
+    tipos_intervencao: ['Orientação documental'],
+    resultado: 'Aceitação',
+    observacoes: '',
+  });
+
+  setEditandoId(null);
+  load();
+}
+
+function editarRegistro(r) {
+  setForm({
+    data_atendimento: r.data_atendimento,
+    paciente_nome: r.paciente_nome,
+    data_nascimento: r.data_nascimento,
+    tipo_atendimento: r.tipo_atendimento,
+    motivo_atendimento: r.motivo_atendimento,
+    comorbidade: r.comorbidade,
+    tipos_intervencao: r.tipos_intervencao,
+    resultado: r.resultado,
+    observacoes: r.observacoes || '',
+  });
+
+  setEditandoId(r.id);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
 
   async function criarUsuario(e) {
     e.preventDefault();
@@ -242,7 +273,7 @@ async function redefinirSenha(e) {
         <>
           <section className="grid">
             <form className="card" onSubmit={salvar}>
-              <h2>Nova intervenção</h2>
+              <h2>{editandoId ? 'Editar intervenção' : 'Nova intervenção'}</h2>
 
               <label>Data de atendimento
                 <input type="date" required value={form.data_atendimento} onChange={e => setForm({ ...form, data_atendimento: e.target.value })} />
@@ -294,7 +325,8 @@ async function redefinirSenha(e) {
                 <textarea value={form.observacoes} onChange={e => setForm({ ...form, observacoes: e.target.value })} />
               </label>
 
-              <button>Salvar intervenção</button>
+              <button>{editandoId ? 'Atualizar intervenção' : 'Salvar intervenção'}</button>
+
             </form>
 
             <section className="card">
@@ -321,6 +353,7 @@ async function redefinirSenha(e) {
                   <th>Intervenção</th>
                   <th>Resultado</th>
                   <th>Profissional</th>
+		  <th>Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -332,6 +365,9 @@ async function redefinirSenha(e) {
                     <td>{r.tipos_intervencao.join(', ')}</td>
                     <td>{r.resultado}</td>
                     <td>{r.profissional}</td>
+		    <td>
+		     <button onClick={() => editarRegistro(r)}>Editar</button>
+		    </td>
                   </tr>
                 ))}
               </tbody>
