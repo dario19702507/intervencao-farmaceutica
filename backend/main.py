@@ -229,7 +229,48 @@ def criar_intervencao(payload: IntervencaoCreate, db: Session = Depends(get_db),
     )
     db.add(item); db.commit(); db.refresh(item)
     return IntervencaoOut(**payload.model_dump(), id=item.id, profissional=current.nome, created_at=item.created_at)
+@app.put("/intervencoes/{intervencao_id}", response_model=IntervencaoOut)
+def atualizar_intervencao(
+    intervencao_id: int,
+    payload: IntervencaoCreate,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user)
+):
+    item = db.query(Intervencao).filter(Intervencao.id == intervencao_id).first()
 
+    if not item:
+        raise HTTPException(status_code=404, detail="Intervenção não encontrada")
+
+    item.data_atendimento = payload.data_atendimento
+    item.paciente_nome = payload.paciente_nome.upper().strip()
+    item.data_nascimento = payload.data_nascimento
+    item.tipo_atendimento = payload.tipo_atendimento
+    item.motivo_atendimento = payload.motivo_atendimento
+    item.comorbidade = payload.comorbidade
+    item.tipos_intervencao = ";".join(payload.tipos_intervencao)
+    item.resultado = payload.resultado
+    item.observacoes = payload.observacoes
+    item.updated_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(item)
+
+    profissional = db.query(User).filter(User.id == item.profissional_id).first()
+
+    return IntervencaoOut(
+        id=item.id,
+        data_atendimento=item.data_atendimento,
+        paciente_nome=item.paciente_nome,
+        data_nascimento=item.data_nascimento,
+        tipo_atendimento=item.tipo_atendimento,
+        motivo_atendimento=item.motivo_atendimento,
+        comorbidade=item.comorbidade,
+        tipos_intervencao=item.tipos_intervencao.split(";"),
+        resultado=item.resultado,
+        observacoes=item.observacoes,
+        profissional=profissional.nome if profissional else "",
+        created_at=item.created_at
+    )
 @app.get("/intervencoes/exportar/csv")
 def exportar_intervencoes_csv(
     data_inicio: Optional[date] = None,
