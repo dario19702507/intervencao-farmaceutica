@@ -29,6 +29,12 @@ function App() {
   const [msg, setMsg] = useState('');
   const [tab, setTab] = useState('intervencoes');
   const [editandoId, setEditandoId] = useState(null);
+  const [profissionais, setProfissionais] = useState([]);
+  const [filtros, setFiltros] = useState({
+    data_inicio: '',
+    data_fim: '',
+    profissional_id: '',
+});
 
   const [novoUsuario, setNovoUsuario] = useState({
     nome: '',
@@ -97,30 +103,54 @@ async function exportarCSV() {
     setToken(j.access_token);
   }
 
+function montarQuery() {
+  const params = new URLSearchParams();
+
+  if (filtros.data_inicio) params.append('data_inicio', filtros.data_inicio);
+  if (filtros.data_fim) params.append('data_fim', filtros.data_fim);
+  if (filtros.profissional_id) params.append('profissional_id', filtros.profissional_id);
+
+  const query = params.toString();
+  return query ? `?${query}` : '';
+}
   async function load() {
-    const [meRes, o, i, l] = await Promise.all([
-      fetch(`${API}/me`, { headers: authHeaders() }),
-      fetch(`${API}/opcoes`, { headers: authHeaders() }),
-      fetch(`${API}/indicadores`, { headers: authHeaders() }),
-      fetch(`${API}/intervencoes`, { headers: authHeaders() }),
-    ]);
+  const query = montarQuery();
 
-    const meJson = await meRes.json();
-    setMe(meJson);
-    setOp(await o.json());
-    setIndic(await i.json());
-    setLista(await l.json());
+  const [meRes, o, i, l, p] = await Promise.all([
+    fetch(`${API}/me`, { headers: authHeaders() }),
+    fetch(`${API}/opcoes`, { headers: authHeaders() }),
+    fetch(`${API}/indicadores${query}`, { headers: authHeaders() }),
+    fetch(`${API}/intervencoes${query}`, { headers: authHeaders() }),
+    fetch(`${API}/profissionais`, { headers: authHeaders() }),
+  ]);
 
-    if (meJson?.perfil === 'admin') {
-      const u = await fetch(`${API}/users`, { headers: authHeaders() });
-      setUsuarios(await u.json());
-    }
+  const meJson = await meRes.json();
+  setMe(meJson);
+  setOp(await o.json());
+  setIndic(await i.json());
+  setLista(await l.json());
+  setProfissionais(await p.json());
+
+  if (meJson?.perfil === 'admin') {
+    const u = await fetch(`${API}/users`, { headers: authHeaders() });
+    setUsuarios(await u.json());
   }
+}
 
-  useEffect(() => {
-    if (token) load();
-  }, [token]);
+function aplicarFiltros(e) {
+  e.preventDefault();
+  load();
+}
 
+function limparFiltros() {
+  setFiltros({
+    data_inicio: '',
+    data_fim: '',
+    profissional_id: '',
+  });
+
+  setTimeout(() => load(), 0);
+}
  async function salvar(e) {
   e.preventDefault();
 
@@ -271,6 +301,43 @@ async function redefinirSenha(e) {
 
       {tab === 'intervencoes' && (
         <>
+<section className="card">
+  <h2>Filtros analíticos</h2>
+  <form onSubmit={aplicarFiltros} className="filters">
+    <label>Data inicial
+      <input
+        type="date"
+        value={filtros.data_inicio}
+        onChange={e => setFiltros({ ...filtros, data_inicio: e.target.value })}
+      />
+    </label>
+
+    <label>Data final
+      <input
+        type="date"
+        value={filtros.data_fim}
+        onChange={e => setFiltros({ ...filtros, data_fim: e.target.value })}
+      />
+    </label>
+
+    <label>Profissional
+      <select
+        value={filtros.profissional_id}
+        onChange={e => setFiltros({ ...filtros, profissional_id: e.target.value })}
+      >
+        <option value="">Todos</option>
+        {profissionais.map(p => (
+          <option key={p.id} value={p.id}>{p.nome}</option>
+        ))}
+      </select>
+    </label>
+
+    <div style={{ display: 'flex', gap: 8, alignItems: 'end' }}>
+      <button type="submit">Aplicar filtros</button>
+      <button type="button" onClick={limparFiltros}>Limpar filtros</button>
+    </div>
+  </form>
+</section>
           <section className="grid">
             <form className="card" onSubmit={salvar}>
               <h2>{editandoId ? 'Editar intervenção' : 'Nova intervenção'}</h2>
