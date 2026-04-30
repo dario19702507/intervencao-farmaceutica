@@ -375,11 +375,11 @@ def listar_intervencoes(
     data_inicio: Optional[date] = None,
     data_fim: Optional[date] = None,
     profissional_id: Optional[int] = None,
+    categoria_profissional: Optional[str] = None,
     db: Session = Depends(get_db),
     current: User = Depends(get_current_user)
 ):
-    q = db.query(Intervencao, User.nome).join(User, User.id == Intervencao.profissional_id)
-
+    q = db.query(Intervencao, User.nome, User.categoria_profissional).join(User, User.id == Intervencao.profissional_id)
     if data_inicio:
         q = q.filter(Intervencao.data_atendimento >= data_inicio)
 
@@ -388,6 +388,9 @@ def listar_intervencoes(
 
     if profissional_id:
         q = q.filter(Intervencao.profissional_id == profissional_id)
+
+    if categoria_profissional:
+        q = q.filter(User.categoria_profissional == categoria_profissional)
 
     rows = q.order_by(Intervencao.data_atendimento.desc()).limit(500).all()
 
@@ -406,14 +409,19 @@ def listar_intervencoes(
             profissional=nome,
             created_at=i.created_at
         )
-        for i, nome in rows
+        for i, nome, _ in rows
     ]
 
-def count_by(db, column, data_inicio=None, data_fim=None, profissional_id=None):
-    q = db.query(column, func.count(Intervencao.id)).group_by(column)
-    if data_inicio: q = q.filter(Intervencao.data_atendimento >= data_inicio)
-    if data_fim: q = q.filter(Intervencao.data_atendimento <= data_fim)
-    if profissional_id: q = q.filter(Intervencao.profissional_id == profissional_id)
+def count_by(db, column, data_inicio=None, data_fim=None, profissional_id=None, categoria_profissional=None):
+    q = db.query(column, func.count(Intervencao.id)).join(User, User.id == Intervencao.profissional_id).group_by(column)
+    if data_inicio: 
+        q = q.filter(Intervencao.data_atendimento >= data_inicio)
+    if data_fim: 
+        q = q.filter(Intervencao.data_atendimento <= data_fim)
+    if profissional_id: 
+        q = q.filter(Intervencao.profissional_id == profissional_id)
+    if categoria_profissional: 
+        q = q.filter(User.categoria_profissional == categoria_profissional)
     return {str(k): v for k, v in q.all()}
 
 @app.get("/indicadores", response_model=Indicadores)
@@ -421,13 +429,19 @@ def indicadores(
     data_inicio: Optional[date] = None,
     data_fim: Optional[date] = None,
     profissional_id: Optional[int] = None,
+    categoria_profissional: Optional[str] = None,
     db: Session = Depends(get_db),
     current: User = Depends(get_current_user)
 ):
-    q = db.query(Intervencao)
-    if data_inicio: q = q.filter(Intervencao.data_atendimento >= data_inicio)
-    if data_fim: q = q.filter(Intervencao.data_atendimento <= data_fim)
-    if profissional_id: q = q.filter(Intervencao.profissional_id == profissional_id)
+    q = db.query(Intervencao).join(User, User.id == Intervencao.profissional_id)
+    if data_inicio:
+        q = q.filter(Intervencao.data_atendimento >= data_inicio)
+    if data_fim: 
+        q = q.filter(Intervencao.data_atendimento <= data_fim)
+    if profissional_id:
+        q = q.filter(Intervencao.profissional_id == profissional_id)
+    if categoria_profissional:
+        q = q.filter(User.categoria_profissional == categoria_profissional)
     registros = q.all()
     tipos = {}
     meses = {}
@@ -439,10 +453,10 @@ def indicadores(
     return Indicadores(
         total_intervencoes=len(registros),
         total_pacientes=len(set(r.paciente_nome for r in registros)),
-        por_tipo_atendimento=count_by(db, Intervencao.tipo_atendimento, data_inicio, data_fim, profissional_id),
-        por_motivo=count_by(db, Intervencao.motivo_atendimento, data_inicio, data_fim, profissional_id),
-        por_comorbidade=count_by(db, Intervencao.comorbidade, data_inicio, data_fim, profissional_id),
-        por_resultado=count_by(db, Intervencao.resultado, data_inicio, data_fim, profissional_id),
+        por_tipo_atendimento=count_by(db, Intervencao.tipo_atendimento, data_inicio, data_fim, profissional_id, categoria_profissional),
+        por_motivo=count_by(db, Intervencao.motivo_atendimento, data_inicio, data_fim, profissional_id, categoria_profissional),
+        por_comorbidade=count_by(db, Intervencao.comorbidade, data_inicio, data_fim, profissional_id, categoria_profissional),
+        por_resultado=count_by(db, Intervencao.resultado, data_inicio, data_fim, profissional_id, categoria_profissional),
         por_tipo_intervencao=tipos,
         por_mes=meses,
     )
