@@ -113,27 +113,39 @@ function montarQuery() {
   const query = params.toString();
   return query ? `?${query}` : '';
 }
-  async function load() {
+async function load() {
   const query = montarQuery();
 
-  const [meRes, o, i, l, p] = await Promise.all([
-    fetch(`${API}/me`, { headers: authHeaders() }),
-    fetch(`${API}/opcoes`, { headers: authHeaders() }),
-    fetch(`${API}/indicadores${query}`, { headers: authHeaders() }),
-    fetch(`${API}/intervencoes${query}`, { headers: authHeaders() }),
-    fetch(`${API}/profissionais`, { headers: authHeaders() }).catch(() => null),
-  ]);
+  try {
+    const meRes = await fetch(`${API}/me`, { headers: authHeaders() });
+    const meJson = await meRes.json();
+    setMe(meJson);
 
-  const meJson = await meRes.json();
-  setMe(meJson);
-  setOp(await o.json());
-  setIndic(await i.json());
-  setLista(await l.json());
-  setProfissionais(p ? await p.json() : []);
+    const o = await fetch(`${API}/opcoes`, { headers: authHeaders() });
+    setOp(await o.json());
 
-  if (meJson?.perfil === 'admin') {
-    const u = await fetch(`${API}/users`, { headers: authHeaders() });
-    setUsuarios(await u.json());
+    const i = await fetch(`${API}/indicadores${query}`, { headers: authHeaders() });
+    setIndic(await i.json());
+
+    const l = await fetch(`${API}/intervencoes${query}`, { headers: authHeaders() });
+    setLista(await l.json());
+
+    const p = await fetch(`${API}/profissionais`, { headers: authHeaders() });
+    if (p.ok) {
+      setProfissionais(await p.json());
+    } else {
+      setProfissionais([]);
+    }
+
+    if (meJson?.perfil === 'admin') {
+      const u = await fetch(`${API}/users`, { headers: authHeaders() });
+      if (u.ok) {
+        setUsuarios(await u.json());
+      }
+    }
+  } catch (error) {
+    console.error(error);
+    setMsg('Erro ao carregar dados do sistema.');
   }
 }
 
