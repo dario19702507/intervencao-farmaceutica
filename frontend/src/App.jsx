@@ -163,6 +163,11 @@ function limparFiltros() {
 
   setTimeout(() => load(), 0);
 }
+useEffect(() => {
+  if (token) {
+    load();
+  }
+}, [token]);
  async function salvar(e) {
   e.preventDefault();
 
