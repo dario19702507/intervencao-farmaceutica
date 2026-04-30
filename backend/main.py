@@ -1,8 +1,10 @@
+import csv
+import io
 import os
 from datetime import datetime, timedelta, date
 from typing import List, Optional
 
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
@@ -228,6 +230,66 @@ def criar_intervencao(payload: IntervencaoCreate, db: Session = Depends(get_db),
     db.add(item); db.commit(); db.refresh(item)
     return IntervencaoOut(**payload.model_dump(), id=item.id, profissional=current.nome, created_at=item.created_at)
 
+@app.get("/intervencoes/exportar/csv")
+def exportar_intervencoes_csv(
+    data_inicio: Optional[date] = None,
+    data_fim: Optional[date] = None,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user)
+):
+    q = db.query(Intervencao, User.nome).join(User, User.id == Intervencao.profissional_id)
+
+    if data_inicio:
+        q = q.filter(Intervencao.data_atendimento >= data_inicio)
+
+    if data_fim:
+        q = q.filter(Intervencao.data_atendimento <= data_fim)
+
+    rows = q.order_by(Intervencao.data_atendimento.desc()).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=';')
+
+    writer.writerow([
+        "id",
+        "data_atendimento",
+        "paciente_nome",
+        "data_nascimento",
+        "tipo_atendimento",
+        "motivo_atendimento",
+        "comorbidade",
+        "tipos_intervencao",
+        "resultado",
+        "observacoes",
+        "profissional",
+        "created_at"
+    ])
+
+    for i, nome in rows:
+        writer.writerow([
+            i.id,
+            i.data_atendimento,
+            i.paciente_nome,
+            i.data_nascimento,
+            i.tipo_atendimento,
+            i.motivo_atendimento,
+            i.comorbidade,
+            i.tipos_intervencao,
+            i.resultado,
+            i.observacoes or "",
+            nome,
+            i.created_at
+        ])
+
+    csv_content = output.getvalue()
+
+    return Response(
+        content=csv_content,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": "attachment; filename=intervencoes_farmaceuticas.csv"
+        }
+    )
 @app.get("/intervencoes", response_model=List[IntervencaoOut])
 def listar_intervencoes(data_inicio: Optional[date] = None, data_fim: Optional[date] = None, db: Session = Depends(get_db), current: User = Depends(get_current_user)):
     q = db.query(Intervencao, User.nome).join(User, User.id == Intervencao.profissional_id)
