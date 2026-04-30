@@ -121,7 +121,7 @@ function montarQuery() {
     fetch(`${API}/opcoes`, { headers: authHeaders() }),
     fetch(`${API}/indicadores${query}`, { headers: authHeaders() }),
     fetch(`${API}/intervencoes${query}`, { headers: authHeaders() }),
-    fetch(`${API}/profissionais`, { headers: authHeaders() }),
+    fetch(`${API}/profissionais`, { headers: authHeaders() }).catch(() => null),
   ]);
 
   const meJson = await meRes.json();
@@ -129,7 +129,7 @@ function montarQuery() {
   setOp(await o.json());
   setIndic(await i.json());
   setLista(await l.json());
-  setProfissionais(await p.json());
+  setProfissionais(p ? await p.json() : []);
 
   if (meJson?.perfil === 'admin') {
     const u = await fetch(`${API}/users`, { headers: authHeaders() });
