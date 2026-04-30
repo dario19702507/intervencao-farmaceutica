@@ -339,20 +339,36 @@ def listar_intervencoes(
     db: Session = Depends(get_db),
     current: User = Depends(get_current_user)
 ):
+    q = db.query(Intervencao, User.nome).join(User, User.id == Intervencao.profissional_id)
+
     if data_inicio:
         q = q.filter(Intervencao.data_atendimento >= data_inicio)
+
     if data_fim:
         q = q.filter(Intervencao.data_atendimento <= data_fim)
+
     if profissional_id:
         q = q.filter(Intervencao.profissional_id == profissional_id)
+
     rows = q.order_by(Intervencao.data_atendimento.desc()).limit(500).all()
-    return [IntervencaoOut(
-        id=i.id, data_atendimento=i.data_atendimento, paciente_nome=i.paciente_nome,
-        data_nascimento=i.data_nascimento, tipo_atendimento=i.tipo_atendimento,
-        motivo_atendimento=i.motivo_atendimento, comorbidade=i.comorbidade,
-        tipos_intervencao=i.tipos_intervencao.split(";"), resultado=i.resultado,
-        observacoes=i.observacoes, profissional=nome, created_at=i.created_at
-    ) for i, nome in rows]
+
+    return [
+        IntervencaoOut(
+            id=i.id,
+            data_atendimento=i.data_atendimento,
+            paciente_nome=i.paciente_nome,
+            data_nascimento=i.data_nascimento,
+            tipo_atendimento=i.tipo_atendimento,
+            motivo_atendimento=i.motivo_atendimento,
+            comorbidade=i.comorbidade,
+            tipos_intervencao=i.tipos_intervencao.split(";"),
+            resultado=i.resultado,
+            observacoes=i.observacoes,
+            profissional=nome,
+            created_at=i.created_at
+        )
+        for i, nome in rows
+    ]
 
 def count_by(db, column, data_inicio=None, data_fim=None, profissional_id=None):
     q = db.query(column, func.count(Intervencao.id)).group_by(column)
