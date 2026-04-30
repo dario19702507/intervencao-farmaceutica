@@ -37,11 +37,12 @@ function App() {
 });
 
   const [novoUsuario, setNovoUsuario] = useState({
-    nome: '',
-    email: '',
-    password: '',
-    perfil: 'farmaceutico',
-  });
+  nome: '',
+  email: '',
+  password: '',
+  perfil: 'farmaceutico',
+  categoria_profissional: 'Farmacêutico',
+});
 
   const [resetSenha, setResetSenha] = useState({
     user_id: '',
@@ -243,7 +244,8 @@ function editarRegistro(r) {
       email: '',
       password: '',
       perfil: 'farmaceutico',
-    });
+      categoria_profissional: 'Farmacêutico',
+});
 
     load();
   }
@@ -474,6 +476,17 @@ async function redefinirSenha(e) {
                 <option value="leitor">leitor</option>
               </select>
             </label>
+	  <label>Categoria profissional
+  	    <select
+    	      value={novoUsuario.categoria_profissional}
+    	      onChange={e => setNovoUsuario({ ...novoUsuario, categoria_profissional: e.target.value })}
+  >
+    	      <option value="Farmacêutico">Farmacêutico</option>
+    	      <option value="Técnico">Técnico</option>
+    	      <option value="Estagiário">Estagiário</option>
+    	      <option value="Docente">Docente</option>
+  	    </select>
+	</label>
             <button>Criar usuário</button>
           </form>
 
@@ -497,6 +510,7 @@ async function redefinirSenha(e) {
                   <th>Nome</th>
                   <th>E-mail</th>
                   <th>Perfil</th>
+		  <th>Categoria</th>
                 </tr>
               </thead>
               <tbody>
@@ -505,6 +519,7 @@ async function redefinirSenha(e) {
                     <td>{u.nome}</td>
                     <td>{u.email}</td>
                     <td>{u.perfil}</td>
+		    <td>{u.categoria_profissional || '-'}</td>
                   </tr>
                 ))}
               </tbody>
