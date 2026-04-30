@@ -148,24 +148,34 @@ function App() {
     load();
   }
 
-  async function redefinirSenha(e) {
-    e.preventDefault();
+async function redefinirSenha(e) {
+  e.preventDefault();
 
-    const r = await fetch(`${API}/users/${resetSenha.user_id}/password`, {
-      method: 'PUT',
-      headers: authHeaders(),
-      body: JSON.stringify({ password: resetSenha.password }),
-    });
-
-    if (!r.ok) {
-      setMsg('Erro ao redefinir senha.');
-      return;
-    }
-
-    setMsg('Senha redefinida com sucesso.');
-    setResetSenha({ user_id: '', password: '' });
-    load();
+  if (!resetSenha.user_id) {
+    setMsg('Selecione um usuário.');
+    return;
   }
+
+  if (!resetSenha.password || resetSenha.password.length < 6) {
+    setMsg('A senha deve ter pelo menos 6 caracteres.');
+    return;
+  }
+
+  const r = await fetch(`${API}/users/${resetSenha.user_id}/password`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify({ password: resetSenha.password }),
+  });
+
+  if (!r.ok) {
+    setMsg('Erro ao redefinir senha.');
+    return;
+  }
+
+  setMsg('Senha redefinida com sucesso.');
+  setResetSenha({ user_id: '', password: '' });
+  load();
+}
 
   function toggleTipo(t) {
     const s = new Set(form.tipos_intervencao);
