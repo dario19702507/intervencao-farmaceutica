@@ -208,6 +208,11 @@ async function redefinirSenha(e) {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => setTab('intervencoes')}>Intervenções</button>
+	  <button onClick={() => {
+	    window.open(`${API}/intervencoes/exportar/csv`, '_blank');
+	  }}>
+ 	    Exportar CSV
+	   </button>
           {me?.perfil === 'admin' && <button onClick={() => setTab('admin')}>Administração</button>}
           <button onClick={() => { localStorage.clear(); setToken(''); }}>Sair</button>
         </div>
