@@ -53,6 +53,28 @@ function App() {
     observacoes: '',
   });
 
+async function exportarCSV() {
+  const r = await fetch(`${API}/intervencoes/exportar/csv`, {
+    headers: authHeaders(),
+  });
+
+  if (!r.ok) {
+    setMsg('Erro ao exportar CSV.');
+    return;
+  }
+
+  const blob = await r.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+
+  a.href = url;
+  a.download = 'intervencoes_farmaceuticas.csv';
+  document.body.appendChild(a);
+  a.click();
+
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
   async function login(e) {
     e.preventDefault();
     const fd = new URLSearchParams();
@@ -208,11 +230,7 @@ async function redefinirSenha(e) {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => setTab('intervencoes')}>Intervenções</button>
-	  <button onClick={() => {
-	    window.open(`${API}/intervencoes/exportar/csv`, '_blank');
-	  }}>
- 	    Exportar CSV
-	   </button>
+	  <button onClick={exportarCSV}>Exportar CSV</button>
           {me?.perfil === 'admin' && <button onClick={() => setTab('admin')}>Administração</button>}
           <button onClick={() => { localStorage.clear(); setToken(''); }}>Sair</button>
         </div>
