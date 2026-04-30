@@ -74,6 +74,9 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=6)
     perfil: str = "farmaceutico"
 
+class PasswordReset(BaseModel):
+    password: str = Field(min_length=6)
+
 class UserOut(BaseModel):
     id: int
     nome: str
@@ -173,6 +176,31 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), current: Use
         raise HTTPException(status_code=400, detail="E-mail já cadastrado")
     user = User(nome=payload.nome, email=payload.email, hashed_password=hash_password(payload.password), perfil=payload.perfil)
     db.add(user); db.commit(); db.refresh(user)
+    return user
+
+@app.get("/users", response_model=List[UserOut])
+def list_users(db: Session = Depends(get_db), current: User = Depends(get_current_user)):
+    ensure_admin(current)
+    return db.query(User).order_by(User.nome.asc()).all()
+
+
+@app.put("/users/{user_id}/password", response_model=UserOut)
+def reset_user_password(
+    user_id: int,
+    payload: PasswordReset,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user)
+):
+    ensure_admin(current)
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    user.hashed_password = hash_password(payload.password)
+    db.commit()
+    db.refresh(user)
+
     return user
 
 @app.get("/me", response_model=UserOut)
