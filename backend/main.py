@@ -185,6 +185,9 @@ def list_users(db: Session = Depends(get_db), current: User = Depends(get_curren
     ensure_admin(current)
     return db.query(User).order_by(User.nome.asc()).all()
 
+@app.get("/profissionais", response_model=List[UserOut])
+def listar_profissionais(db: Session = Depends(get_db), current: User = Depends(get_current_user)):
+    return db.query(User).order_by(User.nome.asc()).all()
 
 @app.put("/users/{user_id}/password", response_model=UserOut)
 def reset_user_password(
