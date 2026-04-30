@@ -32,6 +32,7 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     perfil = Column(String, default="farmaceutico")  # admin, farmaceutico, leitor
+    categoria_profissional = Column(String, default="Farmacêutico")
     created_at = Column(DateTime, default=datetime.utcnow)
     intervencoes = relationship("Intervencao", back_populates="usuario")
 
@@ -53,6 +54,17 @@ class Intervencao(Base):
     usuario = relationship("User", back_populates="intervencoes")
 
 Base.metadata.create_all(bind=engine)
+def aplicar_migracoes_simples():
+    with engine.connect() as conn:
+        try:
+            conn.exec_driver_sql(
+                "ALTER TABLE users ADD COLUMN categoria_profissional VARCHAR DEFAULT 'Farmacêutico'"
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+aplicar_migracoes_simples()
 
 app = FastAPI(title="Sistema de Intervenção Farmacêutica", version="1.0.0")
 
@@ -70,11 +82,12 @@ class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
-class UserCreate(BaseModel):
+class UserOut(BaseModel):
+    id: int
     nome: str
     email: str
-    password: str = Field(min_length=6)
-    perfil: str = "farmaceutico"
+    perfil: str
+    categoria_profissional: Optional[str] = None
 
 class PasswordReset(BaseModel):
     password: str = Field(min_length=6)
@@ -171,12 +184,35 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="E-mail ou senha inválidos")
     return {"access_token": create_access_token({"sub": user.email}), "token_type": "bearer"}
 
+class UserCreate(BaseModel):
+    nome: str
+    email: str
+    password: str = Field(min_length=6)
+    perfil: str = "farmaceutico"
+    categoria_profissional: str = "Farmacêutico"
+
+class UserOut(BaseModel):
+    id: int
+    nome: str
+    email: str
+    perfil: str
+    categoria_profissional: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
 @app.post("/users", response_model=UserOut)
 def create_user(payload: UserCreate, db: Session = Depends(get_db), current: User = Depends(get_current_user)):
     ensure_admin(current)
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(status_code=400, detail="E-mail já cadastrado")
-    user = User(nome=payload.nome, email=payload.email, hashed_password=hash_password(payload.password), perfil=payload.perfil)
+    user = User(
+    nome=payload.nome,
+    email=payload.email,
+    hashed_password=hash_password(payload.password),
+    perfil=payload.perfil,
+    categoria_profissional=payload.categoria_profissional
+)
     db.add(user); db.commit(); db.refresh(user)
     return user
 
