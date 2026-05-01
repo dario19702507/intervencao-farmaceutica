@@ -130,6 +130,7 @@ class Indicadores(BaseModel):
     taxa_encaminhamento: float
     por_profissional: dict
     por_categoria_profissional: dict
+    tendencia_mensal: dict
 
 MOTIVOS = ["Documentação (inclusão/renovação/adequação)", "Dúvidas de paciente"]
 COMORBIDADES = ["Esclerose múltipla", "Esclerose Sistêmica", "Esclerose Lateral Amiotrófica", "Asma/DPOC", "Outro"]
@@ -483,6 +484,36 @@ def indicadores(
             .group_by(User.categoria_profissional)
             .all()
     }
+    tendencia_mensal = {}
+
+    for r in registros:
+        mes = r.data_atendimento.strftime("%Y-%m")
+
+        if mes not in tendencia_mensal:
+            tendencia_mensal[mes] = {
+                "intervencoes": 0,
+                "aceitacao": 0,
+                "acompanhamento": 0,
+                "encaminhamento": 0,
+            }
+
+        tendencia_mensal[mes]["intervencoes"] += 1
+
+        if r.resultado == "Aceitação":
+            tendencia_mensal[mes]["aceitacao"] += 1
+
+        if r.resultado == "Acompanhamento do paciente":
+            tendencia_mensal[mes]["acompanhamento"] += 1
+
+        if "Encaminhamentos" in (r.tipos_intervencao or ""):
+            tendencia_mensal[mes]["encaminhamento"] += 1
+
+    for mes, dados in tendencia_mensal.items():
+        total_mes = dados["intervencoes"]
+
+        dados["taxa_aceitacao"] = round((dados["aceitacao"] / total_mes) * 100, 2) if total_mes else 0
+        dados["taxa_acompanhamento"] = round((dados["acompanhamento"] / total_mes) * 100, 2) if total_mes else 0
+        dados["taxa_encaminhamento"] = round((dados["encaminhamento"] / total_mes) * 100, 2) if total_mes else 0
     return Indicadores(
         total_intervencoes=len(registros),
         total_pacientes=len(set(r.paciente_nome for r in registros)),
@@ -497,4 +528,5 @@ def indicadores(
         taxa_encaminhamento=taxa_encaminhamento,
         por_profissional=por_profissional,
         por_categoria_profissional=por_categoria_profissional,
+        tendencia_mensal=tendencia_mensal,
     )
