@@ -17,6 +17,18 @@ function objToChart(obj) {
   return Object.entries(obj || {}).map(([name, value]) => ({ name, value }));
 }
 
+function tendenciaToChart(obj) {
+  return Object.entries(obj || {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([mes, valores]) => ({
+      mes,
+      intervencoes: valores.intervencoes || 0,
+      taxa_aceitacao: valores.taxa_aceitacao || 0,
+      taxa_acompanhamento: valores.taxa_acompanhamento || 0,
+      taxa_encaminhamento: valores.taxa_encaminhamento || 0,
+    }));
+}
+
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [me, setMe] = useState(null);
@@ -485,6 +497,23 @@ async function redefinirSenha(e) {
               <Chart title="Por comorbidade" data={objToChart(indic?.por_comorbidade)} />
 	      <Chart title="Por profissional" data={objToChart(indic?.por_profissional)} />
 	      <Chart title="Por categoria profissional" data={objToChart(indic?.por_categoria_profissional)} />
+<TrendChart
+  title="Tendência mensal de intervenções"
+  data={tendenciaToChart(indic?.tendencia_mensal)}
+  dataKey="intervencoes"
+/>
+
+<TrendChart
+  title="Tendência mensal de aceitação (%)"
+  data={tendenciaToChart(indic?.tendencia_mensal)}
+  dataKey="taxa_aceitacao"
+/>
+
+<TrendChart
+  title="Tendência mensal de encaminhamento (%)"
+  data={tendenciaToChart(indic?.tendencia_mensal)}
+  dataKey="taxa_encaminhamento"
+/>
             </section>
           </section>
 
@@ -588,6 +617,22 @@ async function redefinirSenha(e) {
         </section>
       )}
     </main>
+  );
+}
+
+function TrendChart({ title, data, dataKey }) {
+  return (
+    <div className="chart">
+      <h3>{title}</h3>
+      <ResponsiveContainer width="100%" height={260}>
+        <BarChart data={data}>
+          <XAxis dataKey="mes" />
+          <YAxis allowDecimals={false} />
+          <Tooltip />
+          <Bar dataKey={dataKey} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
