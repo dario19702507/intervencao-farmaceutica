@@ -687,18 +687,6 @@ async function redefinirSenha(e) {
             <button>Criar usuário</button>
           </form>
 
-          <form className="card" onSubmit={redefinirSenha}>
-            <h2>Redefinir senha</h2>
-            <label>Usuário
-              <select value={resetSenha.user_id} onChange={e => setResetSenha({ ...resetSenha, user_id: e.target.value })}>
-                <option value="">Selecione</option>
-                {usuarios.map(u => <option key={u.id} value={u.id}>{u.nome} ({u.email})</option>)}
-              </select>
-            </label>
-            <label>Nova senha<input type="password" value={resetSenha.password} onChange={e => setResetSenha({ ...resetSenha, password: e.target.value })} /></label>
-            <button>Redefinir senha</button>
-          </form>
-
           <section className="card">
             <h2>Usuários cadastrados</h2>
             <table>
