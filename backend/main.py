@@ -34,7 +34,11 @@ class User(Base):
     perfil = Column(String, default="farmaceutico")  # admin, farmaceutico, leitor
     categoria_profissional = Column(String, default="Farmacêutico")
     created_at = Column(DateTime, default=datetime.utcnow)
-    intervencoes = relationship("Intervencao", back_populates="usuario")
+    intervencoes = relationship(
+    "Intervencao",
+    foreign_keys="Intervencao.profissional_id",
+    back_populates="usuario"
+)
 
 class Intervencao(Base):
     __tablename__ = "intervencoes"
@@ -49,10 +53,13 @@ class Intervencao(Base):
     resultado = Column(String, nullable=False)
     observacoes = Column(Text, nullable=True)
     profissional_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    updated_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    usuario = relationship("User", back_populates="intervencoes")
-
+    usuario = relationship("User", foreign_keys=[profissional_id], back_populates="intervencoes")
+    criador = relationship("User", foreign_keys=[created_by])
+    atualizador = relationship("User", foreign_keys=[updated_by])
 Base.metadata.create_all(bind=engine)
 def aplicar_migracoes_simples():
     with engine.connect() as conn:
@@ -60,6 +67,18 @@ def aplicar_migracoes_simples():
             conn.exec_driver_sql(
                 "ALTER TABLE users ADD COLUMN categoria_profissional VARCHAR DEFAULT 'Farmacêutico'"
             )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+        try:
+            conn.exec_driver_sql("ALTER TABLE intervencoes ADD COLUMN created_by INTEGER")
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+        try:
+            conn.exec_driver_sql("ALTER TABLE intervencoes ADD COLUMN updated_by INTEGER")
             conn.commit()
         except Exception:
             conn.rollback()
@@ -272,6 +291,8 @@ def criar_intervencao(payload: IntervencaoCreate, db: Session = Depends(get_db),
         resultado=payload.resultado,
         observacoes=payload.observacoes,
         profissional_id=current.id,
+	created_by=current.id,
+	updated_by=current.id,
     )
     db.add(item); db.commit(); db.refresh(item)
     return IntervencaoOut(**payload.model_dump(), id=item.id, profissional=current.nome, created_at=item.created_at)
@@ -297,6 +318,7 @@ def atualizar_intervencao(
     item.resultado = payload.resultado
     item.observacoes = payload.observacoes
     item.updated_at = datetime.utcnow()
+    item.updated_by = current.id
 
     db.commit()
     db.refresh(item)
