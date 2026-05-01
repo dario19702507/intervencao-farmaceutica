@@ -40,6 +40,11 @@ function App() {
   const [usuarios, setUsuarios] = useState([]);
   const [msg, setMsg] = useState('');
   const [tab, setTab] = useState('intervencoes');
+  const [senhaConta, setSenhaConta] = useState({
+    senha_atual: '',
+    nova_senha: '',
+    confirmar_senha: '',
+  });
   const [editandoId, setEditandoId] = useState(null);
   const [profissionais, setProfissionais] = useState([]);
   const [filtros, setFiltros] = useState({
@@ -316,6 +321,46 @@ function editarRegistro(r) {
     load();
   }
 
+async function trocarMinhaSenha(e) {
+  e.preventDefault();
+
+  if (!senhaConta.senha_atual) {
+    setMsg('Informe a senha atual.');
+    return;
+  }
+
+  if (!senhaConta.nova_senha || senhaConta.nova_senha.length < 6) {
+    setMsg('A nova senha deve ter pelo menos 6 caracteres.');
+    return;
+  }
+
+  if (senhaConta.nova_senha !== senhaConta.confirmar_senha) {
+    setMsg('A confirmação da nova senha não confere.');
+    return;
+  }
+
+  const r = await fetch(`${API}/me/password`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      senha_atual: senhaConta.senha_atual,
+      nova_senha: senhaConta.nova_senha,
+    }),
+  });
+
+  if (!r.ok) {
+    setMsg('Erro ao alterar senha. Confira a senha atual.');
+    return;
+  }
+
+  setMsg('Senha alterada com sucesso.');
+  setSenhaConta({
+    senha_atual: '',
+    nova_senha: '',
+    confirmar_senha: '',
+  });
+}
+
 async function redefinirSenha(e) {
   e.preventDefault();
 
@@ -375,6 +420,7 @@ async function redefinirSenha(e) {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => setTab('intervencoes')}>Intervenções</button>
+	  <button onClick={() => setTab('conta')}>Minha conta</button>
 	  <button onClick={exportarCSV}>Exportar CSV</button>
           {me?.perfil === 'admin' && <button onClick={() => setTab('admin')}>Administração</button>}
           <button onClick={() => { localStorage.clear(); setToken(''); }}>Sair</button>
@@ -577,6 +623,41 @@ async function redefinirSenha(e) {
           </section>
         </>
       )}
+
+{tab === 'conta' && (
+  <section className="grid">
+    <form className="card" onSubmit={trocarMinhaSenha}>
+      <h2>Minha conta</h2>
+      <p>{me?.nome} — {me?.email}</p>
+
+      <label>Senha atual
+        <input
+          type="password"
+          value={senhaConta.senha_atual}
+          onChange={e => setSenhaConta({ ...senhaConta, senha_atual: e.target.value })}
+        />
+      </label>
+
+      <label>Nova senha
+        <input
+          type="password"
+          value={senhaConta.nova_senha}
+          onChange={e => setSenhaConta({ ...senhaConta, nova_senha: e.target.value })}
+        />
+      </label>
+
+      <label>Confirmar nova senha
+        <input
+          type="password"
+          value={senhaConta.confirmar_senha}
+          onChange={e => setSenhaConta({ ...senhaConta, confirmar_senha: e.target.value })}
+        />
+      </label>
+
+      <button>Alterar senha</button>
+    </form>
+  </section>
+)}
 
       {tab === 'admin' && me?.perfil === 'admin' && (
         <section className="grid">
