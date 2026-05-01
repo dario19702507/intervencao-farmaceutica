@@ -63,7 +63,9 @@ function App() {
   });
 
 async function exportarCSV() {
-  const r = await fetch(`${API}/intervencoes/exportar/csv`, {
+  const query = montarQuery();
+
+  const r = await fetch(`${API}/intervencoes/exportar/csv${query}`, {
     headers: authHeaders(),
   });
 
@@ -77,7 +79,7 @@ async function exportarCSV() {
   const a = document.createElement('a');
 
   a.href = url;
-  a.download = 'intervencoes_farmaceuticas.csv';
+  a.download = 'intervencoes_farmaceuticas_filtradas.csv';
   document.body.appendChild(a);
   a.click();
 
