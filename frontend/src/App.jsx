@@ -495,6 +495,7 @@ async function redefinirSenha(e) {
               <Chart title="Por tipo de intervenção" data={objToChart(indic?.por_tipo_intervencao)} />
               <Chart title="Por resultado" data={objToChart(indic?.por_resultado)} />
               <Chart title="Por comorbidade" data={objToChart(indic?.por_comorbidade)} />
+	      <Chart title="Por faixa etária" data={objToChart(indic?.por_faixa_etaria)} />
 	      <Chart title="Por profissional" data={objToChart(indic?.por_profissional)} />
 	      <Chart title="Por categoria profissional" data={objToChart(indic?.por_categoria_profissional)} />
 <TrendChart
