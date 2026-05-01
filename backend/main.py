@@ -118,6 +118,10 @@ class UserOut(BaseModel):
 class PasswordReset(BaseModel):
     password: str = Field(min_length=6)
 
+class ChangeOwnPassword(BaseModel):
+    senha_atual: str
+    nova_senha: str = Field(min_length=6)
+
 class UserOut(BaseModel):
     id: int
     nome: str
@@ -283,6 +287,25 @@ def reset_user_password(
 @app.get("/me", response_model=UserOut)
 def me(current: User = Depends(get_current_user)):
     return current
+
+@app.put("/me/password")
+def change_own_password(
+    payload: ChangeOwnPassword,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user)
+):
+    user = db.query(User).filter(User.id == current.id).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    if not verify_password(payload.senha_atual, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Senha atual incorreta")
+
+    user.hashed_password = hash_password(payload.nova_senha)
+    db.commit()
+
+    return {"ok": True}
 
 @app.get("/opcoes")
 def opcoes():
