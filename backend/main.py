@@ -131,6 +131,7 @@ class Indicadores(BaseModel):
     por_profissional: dict
     por_categoria_profissional: dict
     tendencia_mensal: dict
+    por_faixa_etaria: dict
 
 MOTIVOS = ["Documentação (inclusão/renovação/adequação)", "Dúvidas de paciente"]
 COMORBIDADES = ["Esclerose múltipla", "Esclerose Sistêmica", "Esclerose Lateral Amiotrófica", "Asma/DPOC", "Outro"]
@@ -430,6 +431,24 @@ def count_by(db, column, data_inicio=None, data_fim=None, profissional_id=None, 
         q = q.filter(User.categoria_profissional == categoria_profissional)
     return {str(k): v for k, v in q.all()}
 
+def calcular_faixa_etaria(data_nascimento: date):
+    hoje = date.today()
+    idade = hoje.year - data_nascimento.year - (
+        (hoje.month, hoje.day) < (data_nascimento.month, data_nascimento.day)
+    )
+
+    if idade < 12:
+        return "0 a 11 anos"
+    if idade < 18:
+        return "12 a 17 anos"
+    if idade < 30:
+        return "18 a 29 anos"
+    if idade < 45:
+        return "30 a 44 anos"
+    if idade < 60:
+        return "45 a 59 anos"
+    return "60 anos ou mais"
+
 @app.get("/indicadores", response_model=Indicadores)
 def indicadores(
     data_inicio: Optional[date] = None,
@@ -451,11 +470,16 @@ def indicadores(
     registros = q.all()
     tipos = {}
     meses = {}
+    faixas_etarias = {}
     for r in registros:
         for t in r.tipos_intervencao.split(";"):
             tipos[t] = tipos.get(t, 0) + 1
+
         chave_mes = r.data_atendimento.strftime("%Y-%m")
         meses[chave_mes] = meses.get(chave_mes, 0) + 1
+
+        faixa = calcular_faixa_etaria(r.data_nascimento)
+        faixas_etarias[faixa] = faixas_etarias.get(faixa, 0) + 1
     total = len(registros)
 
     aceitos = sum(1 for r in registros if r.resultado == "Aceitação")
@@ -529,4 +553,5 @@ def indicadores(
         por_profissional=por_profissional,
         por_categoria_profissional=por_categoria_profissional,
         tendencia_mensal=tendencia_mensal,
+        por_faixa_etaria=faixas_etarias,
     )
