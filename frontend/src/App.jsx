@@ -529,6 +529,9 @@ async function redefinirSenha(e) {
                   <th>Intervenção</th>
                   <th>Resultado</th>
                   <th>Profissional</th>
+		  <th>Criado por</th>
+		  <th>Atualizado por</th>
+		  <th>Última atualização</th>
 		  <th>Ações</th>
                 </tr>
               </thead>
@@ -541,8 +544,11 @@ async function redefinirSenha(e) {
                     <td>{r.tipos_intervencao.join(', ')}</td>
                     <td>{r.resultado}</td>
                     <td>{r.profissional}</td>
+		    <td>{r.criado_por || '-'}</td>
+		    <td>{r.atualizado_por || '-'}</td>
+		    <td>{r.updated_at ? new Date(r.updated_at).toLocaleString('pt-BR') : '-'}</td>
 		    <td>
-		     <button onClick={() => editarRegistro(r)}>Editar</button>
+  		      <button onClick={() => editarRegistro(r)}>Editar</button>
 		    </td>
                   </tr>
                 ))}
