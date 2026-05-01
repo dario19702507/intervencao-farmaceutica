@@ -10,7 +10,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine, Column, Integer, String, Date, DateTime, ForeignKey, Text, func
+from sqlalchemy import create_engine, Column, Integer, String, Date, DateTime, ForeignKey, Text, Boolean, func
 from sqlalchemy.orm import declarative_base, sessionmaker, Session, relationship
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./intervencoes.db")
@@ -57,6 +57,7 @@ class Intervencao(Base):
     updated_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    ativo = Column(Boolean, default=True)
     usuario = relationship("User", foreign_keys=[profissional_id], back_populates="intervencoes")
     criador = relationship("User", foreign_keys=[created_by])
     atualizador = relationship("User", foreign_keys=[updated_by])
@@ -79,6 +80,12 @@ def aplicar_migracoes_simples():
 
         try:
             conn.exec_driver_sql("ALTER TABLE intervencoes ADD COLUMN updated_by INTEGER")
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+        try:
+            conn.exec_driver_sql("ALTER TABLE intervencoes ADD COLUMN ativo BOOLEAN DEFAULT TRUE")
             conn.commit()
         except Exception:
             conn.rollback()
@@ -342,6 +349,22 @@ def atualizar_intervencao(
         profissional=profissional.nome if profissional else "",
         created_at=item.created_at
     )
+@app.put("/intervencoes/{item_id}/inativar")
+def inativar_intervencao(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user)
+):
+    item = db.get(Intervencao, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Registro não encontrado")
+
+    item.ativo = False
+    item.updated_by = current.id
+    item.updated_at = datetime.utcnow()
+
+    db.commit()
+    return {"ok": True}
 @app.get("/intervencoes/exportar/csv")
 def exportar_intervencoes_csv(
     data_inicio: Optional[date] = None,
@@ -350,6 +373,7 @@ def exportar_intervencoes_csv(
     current: User = Depends(get_current_user)
 ):
     q = db.query(Intervencao, User.nome).join(User, User.id == Intervencao.profissional_id)
+    q = q.filter(Intervencao.ativo == True)
 
     if data_inicio:
         q = q.filter(Intervencao.data_atendimento >= data_inicio)
@@ -487,6 +511,7 @@ def indicadores(
     current: User = Depends(get_current_user)
 ):
     q = db.query(Intervencao).join(User, User.id == Intervencao.profissional_id)
+    q = q.filter(Intervencao.ativo == True)
     if data_inicio:
         q = q.filter(Intervencao.data_atendimento >= data_inicio)
     if data_fim: 
