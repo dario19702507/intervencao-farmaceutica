@@ -47,7 +47,7 @@ function App() {
   });
   const [editandoId, setEditandoId] = useState(null);
   const [profissionais, setProfissionais] = useState([]);
-  const [supervisores, setSupervisores] = usestate([]);
+  const [supervisores, setSupervisores] = useState([]);
   const [filtros, setFiltros] = useState({
   periodo: 'mes',
   data_inicio: '',
@@ -551,7 +551,6 @@ async function redefinirSenha(e) {
               <label>Observações
                 <textarea value={form.observacoes} onChange={e => setForm({ ...form, observacoes: e.target.value })} />
               </label>
-
               
 	      <label>Supervisor técnico {me?.categoria_profissional === 'Estagiário' ? '(obrigatório)' : '(opcional)'}
   		<select
