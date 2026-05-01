@@ -125,6 +125,11 @@ class Indicadores(BaseModel):
     por_resultado: dict
     por_tipo_intervencao: dict
     por_mes: dict
+    taxa_aceitacao: float
+    taxa_acompanhamento: float
+    taxa_encaminhamento: float
+    por_profissional: dict
+    por_categoria_profissional: dict
 
 MOTIVOS = ["Documentação (inclusão/renovação/adequação)", "Dúvidas de paciente"]
 COMORBIDADES = ["Esclerose múltipla", "Esclerose Sistêmica", "Esclerose Lateral Amiotrófica", "Asma/DPOC", "Outro"]
@@ -450,6 +455,34 @@ def indicadores(
             tipos[t] = tipos.get(t, 0) + 1
         chave_mes = r.data_atendimento.strftime("%Y-%m")
         meses[chave_mes] = meses.get(chave_mes, 0) + 1
+    total = len(registros)
+
+    aceitos = sum(1 for r in registros if r.resultado == "Aceitação")
+    acompanhamentos = sum(1 for r in registros if r.resultado == "Acompanhamento do paciente")
+    encaminhamentos = sum(
+        1 for r in registros
+        if "Encaminhamentos" in (r.tipos_intervencao or "")
+    )
+
+    taxa_aceitacao = round((aceitos / total) * 100, 2) if total else 0
+    taxa_acompanhamento = round((acompanhamentos / total) * 100, 2) if total else 0
+    taxa_encaminhamento = round((encaminhamentos / total) * 100, 2) if total else 0
+
+    por_profissional = {
+        nome: qtd
+        for nome, qtd in db.query(User.nome, func.count(Intervencao.id))
+            .join(Intervencao, Intervencao.profissional_id == User.id)
+            .group_by(User.nome)
+            .all()
+    }
+
+    por_categoria_profissional = {
+        categoria or "Não informado": qtd
+        for categoria, qtd in db.query(User.categoria_profissional, func.count(Intervencao.id))
+            .join(Intervencao, Intervencao.profissional_id == User.id)
+            .group_by(User.categoria_profissional)
+            .all()
+    }
     return Indicadores(
         total_intervencoes=len(registros),
         total_pacientes=len(set(r.paciente_nome for r in registros)),
@@ -459,4 +492,9 @@ def indicadores(
         por_resultado=count_by(db, Intervencao.resultado, data_inicio, data_fim, profissional_id, categoria_profissional),
         por_tipo_intervencao=tipos,
         por_mes=meses,
+        taxa_aceitacao=taxa_aceitacao,
+        taxa_acompanhamento=taxa_acompanhamento,
+        taxa_encaminhamento=taxa_encaminhamento,
+        por_profissional=por_profissional,
+        por_categoria_profissional=por_categoria_profissional,
     )
