@@ -47,6 +47,7 @@ function App() {
   });
   const [editandoId, setEditandoId] = useState(null);
   const [profissionais, setProfissionais] = useState([]);
+  const [supervisores, setSupervisores] = usestate([]);
   const [filtros, setFiltros] = useState({
   periodo: 'mes',
   data_inicio: '',
@@ -77,6 +78,7 @@ function App() {
     tipos_intervencao: ['Orientação documental'],
     resultado: 'Aceitação',
     observacoes: '',
+    supervisor_id: '',
   });
 
 async function exportarCSV() {
@@ -190,6 +192,13 @@ async function load() {
       setProfissionais([]);
     }
 
+    const s = await fetch(`${API}/supervisores`, { headers: authHeaders() });
+    if (s.ok) {
+      setSupervisores(await s.json());
+    } else {
+      setSupervisores([]);
+    }
+
     if (meJson?.perfil === 'admin') {
       const u = await fetch(`${API}/users`, { headers: authHeaders() });
       if (u.ok) {
@@ -254,6 +263,7 @@ useEffect(() => {
     tipos_intervencao: ['Orientação documental'],
     resultado: 'Aceitação',
     observacoes: '',
+    supervisor_id: '',
   });
 
   setEditandoId(null);
@@ -271,6 +281,7 @@ function editarRegistro(r) {
     tipos_intervencao: r.tipos_intervencao,
     resultado: r.resultado,
     observacoes: r.observacoes || '',
+    supervisor_id: r.supervisor_id || '',
   });
 
   setEditandoId(r.id);
@@ -541,7 +552,21 @@ async function redefinirSenha(e) {
                 <textarea value={form.observacoes} onChange={e => setForm({ ...form, observacoes: e.target.value })} />
               </label>
 
-              <button>{editandoId ? 'Atualizar intervenção' : 'Salvar intervenção'}</button>
+              
+	      <label>Supervisor técnico {me?.categoria_profissional === 'Estagiário' ? '(obrigatório)' : '(opcional)'}
+  		<select
+    		  value={form.supervisor_id}
+    		  required={me?.categoria_profissional === 'Estagiário'}
+    		  onChange={e => setForm({ ...form, supervisor_id: e.target.value })}
+		>
+    		  <option value="">Selecione</option>
+  		  {supervisores.map(s => (
+  		    <option key={s.id} value={s.id}>{s.nome} — {s.categoria_profissional}</option>
+		    ))}
+		  </select>
+		</label>
+
+	    <button>{editandoId ? 'Atualizar intervenção' : 'Salvar intervenção'}</button>
 
             </form>
 
@@ -592,6 +617,7 @@ async function redefinirSenha(e) {
                   <th>Intervenção</th>
                   <th>Resultado</th>
                   <th>Profissional</th>
+		  <th>Supervisor</th>
 		  <th>Criado por</th>
 		  <th>Atualizado por</th>
 		  <th>Última atualização</th>
@@ -607,6 +633,7 @@ async function redefinirSenha(e) {
                     <td>{r.tipos_intervencao.join(', ')}</td>
                     <td>{r.resultado}</td>
                     <td>{r.profissional}</td>
+		    <td>{r.supervisor_nome || '-'}</td>
 		    <td>{r.criado_por || '-'}</td>
 		    <td>{r.atualizado_por || '-'}</td>
 		    <td>{r.updated_at ? new Date(r.updated_at).toLocaleString('pt-BR') : '-'}</td>

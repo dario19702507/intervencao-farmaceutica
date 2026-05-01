@@ -55,12 +55,14 @@ class Intervencao(Base):
     profissional_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     updated_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    supervisor_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     ativo = Column(Boolean, default=True)
     usuario = relationship("User", foreign_keys=[profissional_id], back_populates="intervencoes")
     criador = relationship("User", foreign_keys=[created_by])
     atualizador = relationship("User", foreign_keys=[updated_by])
+    supervisor = relationship("User", foreign_keys=[supervisor_id])
 Base.metadata.create_all(bind=engine)
 def aplicar_migracoes_simples():
     with engine.connect() as conn:
@@ -86,6 +88,12 @@ def aplicar_migracoes_simples():
 
         try:
             conn.exec_driver_sql("ALTER TABLE intervencoes ADD COLUMN ativo BOOLEAN DEFAULT TRUE")
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+        try:
+            conn.exec_driver_sql("ALTER TABLE intervencoes ADD COLUMN supervisor_id INTEGER")
             conn.commit()
         except Exception:
             conn.rollback()
@@ -140,6 +148,7 @@ class IntervencaoCreate(BaseModel):
     tipos_intervencao: List[str]
     resultado: str
     observacoes: Optional[str] = None
+    supervisor_id: Optional[int] = None
 
 class IntervencaoOut(IntervencaoCreate):
     id: int
@@ -148,6 +157,7 @@ class IntervencaoOut(IntervencaoCreate):
     updated_at: Optional[datetime] = None
     criado_por: Optional[str] = None
     atualizado_por: Optional[str] = None
+    supervisor_nome: Optional[str] = None
 
 class Indicadores(BaseModel):
     total_intervencoes: int
@@ -265,6 +275,12 @@ def list_users(db: Session = Depends(get_db), current: User = Depends(get_curren
 def listar_profissionais(db: Session = Depends(get_db), current: User = Depends(get_current_user)):
     return db.query(User).order_by(User.nome.asc()).all()
 
+@app.get("/supervisores", response_model=List[UserOut])
+def listar_supervisores(db: Session = Depends(get_db), current: User = Depends(get_current_user)):
+    return db.query(User).filter(
+        User.categoria_profissional.in_(["Farmacêutico", "Técnico", "Docente"])
+    ).order_by(User.nome.asc()).all()
+
 @app.put("/users/{user_id}/password", response_model=UserOut)
 def reset_user_password(
     user_id: int,
@@ -313,6 +329,8 @@ def opcoes():
 
 @app.post("/intervencoes", response_model=IntervencaoOut)
 def criar_intervencao(payload: IntervencaoCreate, db: Session = Depends(get_db), current: User = Depends(get_current_user)):
+    if current.categoria_profissional == "Estagiário" and not payload.supervisor_id:
+        raise HTTPException(status_code=400, detail="Supervisor obrigatório para estagiário")
     item = Intervencao(
         data_atendimento=payload.data_atendimento,
         paciente_nome=payload.paciente_nome.upper().strip(),
@@ -326,6 +344,7 @@ def criar_intervencao(payload: IntervencaoCreate, db: Session = Depends(get_db),
         profissional_id=current.id,
 	created_by=current.id,
 	updated_by=current.id,
+        supervisor_id=payload.supervisor_id,
     )
     db.add(item); db.commit(); db.refresh(item)
     return IntervencaoOut(**payload.model_dump(), id=item.id, profissional=current.nome, created_at=item.created_at)
@@ -341,6 +360,9 @@ def atualizar_intervencao(
     if not item:
         raise HTTPException(status_code=404, detail="Intervenção não encontrada")
 
+    if current.categoria_profissional == "Estagiário" and not payload.supervisor_id:
+        raise HTTPException(status_code=400, detail="Supervisor obrigatório para estagiário")
+
     item.data_atendimento = payload.data_atendimento
     item.paciente_nome = payload.paciente_nome.upper().strip()
     item.data_nascimento = payload.data_nascimento
@@ -352,6 +374,7 @@ def atualizar_intervencao(
     item.observacoes = payload.observacoes
     item.updated_at = datetime.utcnow()
     item.updated_by = current.id
+    item.supervisor_id = payload.supervisor_id
 
     db.commit()
     db.refresh(item)
