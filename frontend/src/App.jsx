@@ -147,6 +147,42 @@ function montarQuery() {
   return params.toString() ? `?${params.toString()}` : '';
 }
 
+async function load() {
+  const query = montarQuery();
+
+  try {
+    const meRes = await fetch(`${API}/me`, { headers: authHeaders() });
+    const meJson = await meRes.json();
+    setMe(meJson);
+
+    const o = await fetch(`${API}/opcoes`, { headers: authHeaders() });
+    setOp(await o.json());
+
+    const i = await fetch(`${API}/indicadores${query}`, { headers: authHeaders() });
+    setIndic(await i.json());
+
+    const l = await fetch(`${API}/intervencoes${query}`, { headers: authHeaders() });
+    setLista(await l.json());
+
+    const p = await fetch(`${API}/profissionais`, { headers: authHeaders() });
+    if (p.ok) {
+      setProfissionais(await p.json());
+    } else {
+      setProfissionais([]);
+    }
+
+    if (meJson?.perfil === 'admin') {
+      const u = await fetch(`${API}/users`, { headers: authHeaders() });
+      if (u.ok) {
+        setUsuarios(await u.json());
+      }
+    }
+  } catch (error) {
+    console.error(error);
+    setMsg('Erro ao carregar dados do sistema.');
+  }
+}
+
 function aplicarFiltros(e) {
   e.preventDefault();
   load();
