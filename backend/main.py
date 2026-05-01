@@ -134,6 +134,9 @@ class IntervencaoOut(IntervencaoCreate):
     id: int
     profissional: str
     created_at: datetime
+    updated_at: Optional[datetime] = None
+    criado_por: Optional[str] = None
+    atualizado_por: Optional[str] = None
 
 class Indicadores(BaseModel):
     total_intervencoes: int
@@ -436,7 +439,10 @@ def listar_intervencoes(
             resultado=i.resultado,
             observacoes=i.observacoes,
             profissional=nome,
-            created_at=i.created_at
+            created_at=i.created_at,
+	    updated_at=i.updated_at,
+	    criado_por=i.criador.nome if i.criador else nome,
+	    atualizado_por=i.atualizador.nome if i.atualizador else nome,
         )
         for i, nome, _ in rows
     ]
