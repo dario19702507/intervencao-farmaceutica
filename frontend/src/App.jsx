@@ -32,8 +32,8 @@ function tendenciaToChart(obj) {
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [me, setMe] = useState(null);
-  const [email, setEmail] = useState('admin@farmacia.local');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [op, setOp] = useState(null);
   const [indic, setIndic] = useState(null);
   const [lista, setLista] = useState([]);
@@ -360,7 +360,6 @@ async function redefinirSenha(e) {
           <input value={email} onChange={e => setEmail(e.target.value)} placeholder="e-mail" />
           <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="senha" />
           <button>Entrar</button>
-          <small>Usuário inicial: admin@farmacia.local / admin123</small>
           {msg && <b>{msg}</b>}
         </form>
       </main>
