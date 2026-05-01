@@ -272,6 +272,24 @@ function editarRegistro(r) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+  async function inativarRegistro(id) {
+    const ok = window.confirm('Deseja inativar este registro?');
+    if (!ok) return;
+
+    const r = await fetch(`${API}/intervencoes/${id}/inativar`, {
+      method: 'PUT',
+      headers: authHeaders(),
+    });
+
+    if (!r.ok) {
+      setMsg('Erro ao inativar registro.');
+      return;
+    }
+
+    setMsg('Registro inativado com sucesso.');
+    load();
+}
+
   async function criarUsuario(e) {
     e.preventDefault();
 
@@ -548,7 +566,10 @@ async function redefinirSenha(e) {
 		    <td>{r.atualizado_por || '-'}</td>
 		    <td>{r.updated_at ? new Date(r.updated_at).toLocaleString('pt-BR') : '-'}</td>
 		    <td>
-  		      <button onClick={() => editarRegistro(r)}>Editar</button>
+  		    <td style={{ display: 'flex', gap: 6 }}>
+		      <button onClick={() => editarRegistro(r)}>Editar</button>
+		      <button onClick={() => inativarRegistro(r.id)}>Inativar</button>
+		    </td>
 		    </td>
                   </tr>
                 ))}
