@@ -31,9 +31,10 @@ function App() {
   const [editandoId, setEditandoId] = useState(null);
   const [profissionais, setProfissionais] = useState([]);
   const [filtros, setFiltros] = useState({
-    data_inicio: '',
-    data_fim: '',
-    profissional_id: '',
+  periodo: 'mes',
+  data_inicio: '',
+  data_fim: '',
+  categoria_profissional: '',
 });
 
   const [novoUsuario, setNovoUsuario] = useState({
@@ -106,48 +107,44 @@ async function exportarCSV() {
 
 function montarQuery() {
   const params = new URLSearchParams();
+  const hoje = new Date();
+  let inicio = '';
+  let fim = '';
 
-  if (filtros.data_inicio) params.append('data_inicio', filtros.data_inicio);
-  if (filtros.data_fim) params.append('data_fim', filtros.data_fim);
-  if (filtros.profissional_id) params.append('profissional_id', filtros.profissional_id);
-
-  const query = params.toString();
-  return query ? `?${query}` : '';
-}
-async function load() {
-  const query = montarQuery();
-
-  try {
-    const meRes = await fetch(`${API}/me`, { headers: authHeaders() });
-    const meJson = await meRes.json();
-    setMe(meJson);
-
-    const o = await fetch(`${API}/opcoes`, { headers: authHeaders() });
-    setOp(await o.json());
-
-    const i = await fetch(`${API}/indicadores${query}`, { headers: authHeaders() });
-    setIndic(await i.json());
-
-    const l = await fetch(`${API}/intervencoes${query}`, { headers: authHeaders() });
-    setLista(await l.json());
-
-    const p = await fetch(`${API}/profissionais`, { headers: authHeaders() });
-    if (p.ok) {
-      setProfissionais(await p.json());
-    } else {
-      setProfissionais([]);
-    }
-
-    if (meJson?.perfil === 'admin') {
-      const u = await fetch(`${API}/users`, { headers: authHeaders() });
-      if (u.ok) {
-        setUsuarios(await u.json());
-      }
-    }
-  } catch (error) {
-    console.error(error);
-    setMsg('Erro ao carregar dados do sistema.');
+  if (filtros.periodo === 'semana') {
+    const d = new Date(hoje);
+    d.setDate(hoje.getDate() - 7);
+    inicio = d.toISOString().slice(0, 10);
+    fim = hoje.toISOString().slice(0, 10);
   }
+
+  if (filtros.periodo === 'quinzena') {
+    const d = new Date(hoje);
+    d.setDate(hoje.getDate() - 15);
+    inicio = d.toISOString().slice(0, 10);
+    fim = hoje.toISOString().slice(0, 10);
+  }
+
+  if (filtros.periodo === 'mes') {
+    inicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0, 10);
+    fim = hoje.toISOString().slice(0, 10);
+  }
+
+  if (filtros.periodo === 'ano') {
+    inicio = new Date(hoje.getFullYear(), 0, 1).toISOString().slice(0, 10);
+    fim = hoje.toISOString().slice(0, 10);
+  }
+
+  if (filtros.periodo === 'customizado') {
+    inicio = filtros.data_inicio;
+    fim = filtros.data_fim;
+  }
+
+  if (inicio) params.append('data_inicio', inicio);
+  if (fim) params.append('data_fim', fim);
+  if (filtros.categoria_profissional) params.append('categoria_profissional', filtros.categoria_profissional);
+
+  return params.toString() ? `?${params.toString()}` : '';
 }
 
 function aplicarFiltros(e) {
@@ -157,9 +154,10 @@ function aplicarFiltros(e) {
 
 function limparFiltros() {
   setFiltros({
+    periodo: 'mes',
     data_inicio: '',
     data_fim: '',
-    profissional_id: '',
+    categoria_profissional: '',
   });
 
   setTimeout(() => load(), 0);
@@ -323,31 +321,50 @@ async function redefinirSenha(e) {
 <section className="card">
   <h2>Filtros analíticos</h2>
   <form onSubmit={aplicarFiltros} className="filters">
-    <label>Data inicial
-      <input
-        type="date"
-        value={filtros.data_inicio}
-        onChange={e => setFiltros({ ...filtros, data_inicio: e.target.value })}
-      />
-    </label>
 
-    <label>Data final
-      <input
-        type="date"
-        value={filtros.data_fim}
-        onChange={e => setFiltros({ ...filtros, data_fim: e.target.value })}
-      />
-    </label>
-
-    <label>Profissional
+    <label>Período
       <select
-        value={filtros.profissional_id}
-        onChange={e => setFiltros({ ...filtros, profissional_id: e.target.value })}
+        value={filtros.periodo}
+        onChange={e => setFiltros({ ...filtros, periodo: e.target.value })}
+      >
+        <option value="mes">Mês atual</option>
+        <option value="semana">Últimos 7 dias</option>
+        <option value="quinzena">Últimos 15 dias</option>
+        <option value="ano">Ano atual</option>
+        <option value="customizado">Personalizado</option>
+      </select>
+    </label>
+
+    {filtros.periodo === 'customizado' && (
+      <>
+        <label>Data inicial
+          <input
+            type="date"
+            value={filtros.data_inicio}
+            onChange={e => setFiltros({ ...filtros, data_inicio: e.target.value })}
+          />
+        </label>
+
+        <label>Data final
+          <input
+            type="date"
+            value={filtros.data_fim}
+            onChange={e => setFiltros({ ...filtros, data_fim: e.target.value })}
+          />
+        </label>
+      </>
+    )}
+
+    <label>Categoria profissional
+      <select
+        value={filtros.categoria_profissional}
+        onChange={e => setFiltros({ ...filtros, categoria_profissional: e.target.value })}
       >
         <option value="">Todos</option>
-        {profissionais.map(p => (
-          <option key={p.id} value={p.id}>{p.nome}</option>
-        ))}
+        <option value="Farmacêutico">Farmacêutico</option>
+        <option value="Técnico">Técnico</option>
+        <option value="Estagiário">Estagiário</option>
+        <option value="Docente">Docente</option>
       </select>
     </label>
 
