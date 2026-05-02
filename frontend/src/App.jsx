@@ -407,6 +407,8 @@ async function redefinirSenha(e) {
     setForm({ ...form, tipos_intervencao: [...s] });
   }
 
+  const podeEditar = me?.perfil !== 'leitor';
+
   if (!token) {
     return (
       <main className="login">
@@ -499,75 +501,77 @@ async function redefinirSenha(e) {
   </form>
 </section>
           <section className="grid">
-            <form className="card" onSubmit={salvar}>
-              <h2>{editandoId ? 'Editar intervenção' : 'Nova intervenção'}</h2>
+	    {podeEditar && (
+              <form className="card" onSubmit={salvar}>
+                <h2>{editandoId ? 'Editar intervenção' : 'Nova intervenção'}</h2>
 
-              <label>Data de atendimento
-                <input type="date" required value={form.data_atendimento} onChange={e => setForm({ ...form, data_atendimento: e.target.value })} />
-              </label>
+                <label>Data de atendimento
+                  <input type="date" required value={form.data_atendimento} onChange={e => setForm({ ...form, data_atendimento: e.target.value })} />
+                </label>
+  
+                <label>Paciente
+                  <input required value={form.paciente_nome} onChange={e => setForm({ ...form, paciente_nome: e.target.value.toUpperCase() })} placeholder="NOME COMPLETO" />
+                </label>
+  
+                <label>Data de nascimento
+                  <input type="date" required value={form.data_nascimento} onChange={e => setForm({ ...form, data_nascimento: e.target.value })} />
+                </label>
+  
+                <label>Tipo de atendimento
+                  <select value={form.tipo_atendimento} onChange={e => setForm({ ...form, tipo_atendimento: e.target.value })}>
+                    {op?.tipos_atendimento?.map(x => <option key={x}>{x}</option>)}
+                  </select>
+                </label>
 
-              <label>Paciente
-                <input required value={form.paciente_nome} onChange={e => setForm({ ...form, paciente_nome: e.target.value.toUpperCase() })} placeholder="NOME COMPLETO" />
-              </label>
+                <label>Motivo
+                  <select value={form.motivo_atendimento} onChange={e => setForm({ ...form, motivo_atendimento: e.target.value })}>
+                    {op?.motivos?.map(x => <option key={x}>{x}</option>)}
+                  </select>
+                </label>
 
-              <label>Data de nascimento
-                <input type="date" required value={form.data_nascimento} onChange={e => setForm({ ...form, data_nascimento: e.target.value })} />
-              </label>
+                <label>Comorbidade
+                  <select value={form.comorbidade} onChange={e => setForm({ ...form, comorbidade: e.target.value })}>
+                    {op?.comorbidades?.map(x => <option key={x}>{x}</option>)}
+                  </select>
+                </label>
 
-              <label>Tipo de atendimento
-                <select value={form.tipo_atendimento} onChange={e => setForm({ ...form, tipo_atendimento: e.target.value })}>
-                  {op?.tipos_atendimento?.map(x => <option key={x}>{x}</option>)}
-                </select>
-              </label>
+                <fieldset>
+                  <legend>Tipo de intervenção</legend>
+                  {op?.tipos_intervencao?.map(t => (
+                    <label className="check" key={t}>
+                      <input type="checkbox" checked={form.tipos_intervencao.includes(t)} onChange={() => toggleTipo(t)} />
+                      {t}
+                    </label>
+                  ))}
+                </fieldset>
 
-              <label>Motivo
-                <select value={form.motivo_atendimento} onChange={e => setForm({ ...form, motivo_atendimento: e.target.value })}>
-                  {op?.motivos?.map(x => <option key={x}>{x}</option>)}
-                </select>
-              </label>
+                <label>Resultado
+                  <select value={form.resultado} onChange={e => setForm({ ...form, resultado: e.target.value })}>
+                    {op?.resultados?.map(x => <option key={x}>{x}</option>)}
+                  </select>
+                </label>
 
-              <label>Comorbidade
-                <select value={form.comorbidade} onChange={e => setForm({ ...form, comorbidade: e.target.value })}>
-                  {op?.comorbidades?.map(x => <option key={x}>{x}</option>)}
-                </select>
-              </label>
-
-              <fieldset>
-                <legend>Tipo de intervenção</legend>
-                {op?.tipos_intervencao?.map(t => (
-                  <label className="check" key={t}>
-                    <input type="checkbox" checked={form.tipos_intervencao.includes(t)} onChange={() => toggleTipo(t)} />
-                    {t}
-                  </label>
-                ))}
-              </fieldset>
-
-              <label>Resultado
-                <select value={form.resultado} onChange={e => setForm({ ...form, resultado: e.target.value })}>
-                  {op?.resultados?.map(x => <option key={x}>{x}</option>)}
-                </select>
-              </label>
-
-              <label>Observações
-                <textarea value={form.observacoes} onChange={e => setForm({ ...form, observacoes: e.target.value })} />
-              </label>
+                <label>Observações
+                  <textarea value={form.observacoes} onChange={e => setForm({ ...form, observacoes: e.target.value })} />
+                </label>
               
-	      <label>Supervisor técnico {me?.categoria_profissional === 'Estagiário' ? '(obrigatório)' : '(opcional)'}
-  		<select
-    		  value={form.supervisor_id}
+	        <label>Supervisor técnico {me?.categoria_profissional === 'Estagiário' ? '(obrigatório)' : '(opcional)'}
+  	   	<select
+    	  	  value={form.supervisor_id}
     		  required={me?.categoria_profissional === 'Estagiário'}
     		  onChange={e => setForm({ ...form, supervisor_id: e.target.value })}
 		>
-    		  <option value="">Selecione</option>
-  		  {supervisores.map(s => (
-  		    <option key={s.id} value={s.id}>{s.nome} — {s.categoria_profissional}</option>
-		    ))}
-		  </select>
-		</label>
+    		    <option value="">Selecione</option>
+      		  {supervisores.map(s => (
+    		    <option key={s.id} value={s.id}>{s.nome} — {s.categoria_profissional}</option>
+	  	    ))}
+	  	  </select>
+	  	</label>
 
-	    <button>{editandoId ? 'Atualizar intervenção' : 'Salvar intervenção'}</button>
+  	    <button>{editandoId ? 'Atualizar intervenção' : 'Salvar intervenção'}</button>
 
-            </form>
+              </form>
+          )}
 
             <section className="card">
               <h2>Indicadores</h2>
@@ -620,7 +624,7 @@ async function redefinirSenha(e) {
 		  <th>Criado por</th>
 		  <th>Atualizado por</th>
 		  <th>Última atualização</th>
-		  <th>Ações</th>
+		  {podeEditar && <th>Ações</th>}
                 </tr>
               </thead>
               <tbody>
@@ -637,10 +641,12 @@ async function redefinirSenha(e) {
 		    <td>{r.atualizado_por || '-'}</td>
 		    <td>{r.updated_at ? new Date(r.updated_at).toLocaleString('pt-BR') : '-'}</td>
 		    <td>
+  		    {podeEditar && (
   		    <td style={{ display: 'flex', gap: 6 }}>
-		      <button onClick={() => editarRegistro(r)}>Editar</button>
+    		      <button onClick={() => editarRegistro(r)}>Editar</button>
 		      <button onClick={() => inativarRegistro(r.id)}>Inativar</button>
 		    </td>
+)}
 		    </td>
                   </tr>
                 ))}
