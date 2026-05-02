@@ -217,6 +217,10 @@ def ensure_admin(user: User):
     if user.perfil != "admin":
         raise HTTPException(status_code=403, detail="Acesso restrito ao administrador")
 
+def ensure_not_reader(user: User):
+    if user.perfil == "leitor":
+        raise HTTPException(status_code=403, detail="Perfil sem permissão para alterar registros")
+
 @app.on_event("startup")
 def seed_admin():
     db = SessionLocal()
@@ -328,7 +332,13 @@ def opcoes():
     return {"motivos": MOTIVOS, "comorbidades": COMORBIDADES, "tipos_intervencao": TIPOS_INTERVENCAO, "resultados": RESULTADOS, "tipos_atendimento": ["Presencial", "Remoto"]}
 
 @app.post("/intervencoes", response_model=IntervencaoOut)
-def criar_intervencao(payload: IntervencaoCreate, db: Session = Depends(get_db), current: User = Depends(get_current_user)):
+def criar_intervencao(
+    payload: IntervencaoCreate,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user)
+):
+    ensure_not_reader(current)
+
     if current.categoria_profissional == "Estagiário" and not payload.supervisor_id:
         raise HTTPException(status_code=400, detail="Supervisor obrigatório para estagiário")
     item = Intervencao(
@@ -350,11 +360,13 @@ def criar_intervencao(payload: IntervencaoCreate, db: Session = Depends(get_db),
     return IntervencaoOut(**payload.model_dump(), id=item.id, profissional=current.nome, created_at=item.created_at)
 @app.put("/intervencoes/{intervencao_id}", response_model=IntervencaoOut)
 def atualizar_intervencao(
-    intervencao_id: int,
+        intervencao_id: int,
     payload: IntervencaoCreate,
     db: Session = Depends(get_db),
     current: User = Depends(get_current_user)
 ):
+    ensure_not_reader(current)
+
     item = db.query(Intervencao).filter(Intervencao.id == intervencao_id).first()
 
     if not item:
@@ -401,6 +413,8 @@ def inativar_intervencao(
     db: Session = Depends(get_db),
     current: User = Depends(get_current_user)
 ):
+    ensure_not_reader(current)
+
     item = db.get(Intervencao, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Registro não encontrado")
