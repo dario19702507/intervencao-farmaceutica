@@ -37,6 +37,7 @@ function App() {
   const [op, setOp] = useState(null);
   const [indic, setIndic] = useState(null);
   const [lista, setLista] = useState([]);
+  const [inativados, setInativados] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
   const [msg, setMsg] = useState('');
   const [tab, setTab] = useState('intervencoes');
@@ -270,6 +271,19 @@ useEffect(() => {
   load();
 }
 
+async function carregarInativados() {
+  const r = await fetch(`${API}/intervencoes/inativadas`, {
+    headers: authHeaders(),
+  });
+
+  if (!r.ok) {
+    setMsg('Erro ao carregar registros inativados.');
+    return;
+  }
+
+  setInativados(await r.json());
+}
+
 function editarRegistro(r) {
   setForm({
     data_atendimento: r.data_atendimento,
@@ -458,6 +472,11 @@ async function redefinirSenha(e) {
 	  <button onClick={() => setTab('conta')}>Minha conta</button>
 	  <button onClick={exportarCSV}>Exportar CSV</button>
           {me?.perfil === 'admin' && <button onClick={() => setTab('admin')}>Administração</button>}
+          {me?.perfil === 'admin' && (
+            <button onClick={() => { setTab('auditoria'); carregarInativados(); }}>
+   	      Auditoria
+ 	    </button>
+          )}
           <button onClick={() => { localStorage.clear(); setToken(''); }}>Sair</button>
         </div>
       </header>
@@ -713,6 +732,41 @@ async function redefinirSenha(e) {
 
       <button>Alterar senha</button>
     </form>
+  </section>
+)}
+
+{tab === 'auditoria' && me?.perfil === 'admin' && (
+  <section className="card">
+    <h2>Registros inativados</h2>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Paciente</th>
+          <th>Comorbidade</th>
+          <th>Resultado</th>
+          <th>Profissional</th>
+          <th>Supervisor</th>
+          <th>Inativado por</th>
+          <th>Data da inativação</th>
+        </tr>
+      </thead>
+      <tbody>
+        {inativados.map(r => (
+          <tr key={r.id}>
+            <td>{r.data_atendimento}</td>
+            <td>{r.paciente_nome}</td>
+            <td>{r.comorbidade}</td>
+            <td>{r.resultado}</td>
+            <td>{r.profissional}</td>
+            <td>{r.supervisor_nome || '-'}</td>
+            <td>{r.atualizado_por || '-'}</td>
+            <td>{r.updated_at ? new Date(r.updated_at).toLocaleString('pt-BR') : '-'}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   </section>
 )}
 
