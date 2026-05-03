@@ -495,6 +495,7 @@ async function redefinirSenha(e) {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => setTab('intervencoes')}>Intervenções</button>
+	  <button onClick={() => setTab('dashboard')}>Dashboard</button>
 	  <button onClick={() => setTab('conta')}>Minha conta</button>
 	  <button onClick={exportarCSV}>Exportar CSV</button>
           {me?.perfil === 'admin' && <button onClick={() => setTab('admin')}>Administração</button>}
@@ -511,62 +512,7 @@ async function redefinirSenha(e) {
 
       {tab === 'intervencoes' && (
         <>
-<section className="card">
-  <h2>Filtros analíticos</h2>
-  <form onSubmit={aplicarFiltros} className="filters">
 
-    <label>Período
-      <select
-        value={filtros.periodo}
-        onChange={e => setFiltros({ ...filtros, periodo: e.target.value })}
-      >
-        <option value="mes">Mês atual</option>
-        <option value="semana">Últimos 7 dias</option>
-        <option value="quinzena">Últimos 15 dias</option>
-        <option value="ano">Ano atual</option>
-        <option value="customizado">Personalizado</option>
-      </select>
-    </label>
-
-    {filtros.periodo === 'customizado' && (
-      <>
-        <label>Data inicial
-          <input
-            type="date"
-            value={filtros.data_inicio}
-            onChange={e => setFiltros({ ...filtros, data_inicio: e.target.value })}
-          />
-        </label>
-
-        <label>Data final
-          <input
-            type="date"
-            value={filtros.data_fim}
-            onChange={e => setFiltros({ ...filtros, data_fim: e.target.value })}
-          />
-        </label>
-      </>
-    )}
-
-    <label>Categoria profissional
-      <select
-        value={filtros.categoria_profissional}
-        onChange={e => setFiltros({ ...filtros, categoria_profissional: e.target.value })}
-      >
-        <option value="">Todos</option>
-        <option value="Farmacêutico">Farmacêutico</option>
-        <option value="Técnico">Técnico</option>
-        <option value="Estagiário">Estagiário</option>
-        <option value="Docente">Docente</option>
-      </select>
-    </label>
-
-    <div style={{ display: 'flex', gap: 8, alignItems: 'end' }}>
-      <button type="submit">Aplicar filtros</button>
-      <button type="button" onClick={limparFiltros}>Limpar filtros</button>
-    </div>
-  </form>
-</section>
           <section className="grid">
 	    {podeEditar && (
               <form className="card" onSubmit={salvar}>
@@ -678,7 +624,9 @@ async function redefinirSenha(e) {
 
           <section className="card">
             <h2>Registros recentes</h2>
+	    <div style={{ maxHeight: '55vh', overflowY: 'auto' }}>
             <table>
+	    </div>
               <thead>
                 <tr>
                   <th>Data</th>
@@ -765,6 +713,9 @@ async function redefinirSenha(e) {
   <section className="card">
     <h2>Registros inativados</h2>
 
+    <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+      <table>
+
     <table>
       <thead>
         <tr>
@@ -799,9 +750,26 @@ async function redefinirSenha(e) {
         ))}
       </tbody>
     </table>
-  </section>
+  </div>
+</section>
 )}
 
+{tab === 'dashboard' && (
+  <section className="card">
+    <h2>Dashboard</h2>
+
+    <div className="kpis">
+      <strong>{indic?.total_intervenc
+
+    <div className="stats">
+      <div className="stat"><strong>{indic.total_intervencoes}</strong><span>Intervenções</span></div>
+      <div className="stat"><strong>{indic.total_pacientes}</strong><span>Pacientes</span></div>
+      <div className="stat"><strong>{indic.taxa_aceitacao}%</strong><span>Aceitação</span></div>
+      <div className="stat"><strong>{indic.taxa_acompanhamento}%</strong><span>Acompanhamento</span></div>
+      <div className="stat"><strong>{indic.taxa_encaminhamento}%</strong><span>Encaminhamento</span></div>
+    </div>
+  </section>
+)}
       {tab === 'admin' && me?.perfil === 'admin' && (
         <section className="grid">
           <form className="card" onSubmit={criarUsuario}>
