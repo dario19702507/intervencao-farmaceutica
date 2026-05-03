@@ -448,6 +448,25 @@ def inativar_intervencao(
 
     db.commit()
     return {"ok": True}
+@app.put("/intervencoes/{item_id}/reativar")
+def reativar_intervencao(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user)
+):
+    ensure_admin(current)
+
+    item = db.get(Intervencao, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Registro não encontrado")
+
+    item.ativo = True
+    item.motivo_inativacao = None
+    item.updated_by = current.id
+    item.updated_at = datetime.utcnow()
+
+    db.commit()
+    return {"ok": True}
 @app.get("/intervencoes/exportar/csv")
 def exportar_intervencoes_csv(
     data_inicio: Optional[date] = None,
