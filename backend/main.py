@@ -508,6 +508,44 @@ def exportar_intervencoes_csv(
             "Content-Disposition": "attachment; filename=intervencoes_farmaceuticas.csv"
         }
     )
+@app.get("/intervencoes/inativadas", response_model=List[IntervencaoOut])
+def listar_intervencoes_inativadas(
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user)
+):
+    ensure_admin(current)
+
+    q = db.query(Intervencao, User.nome, User.categoria_profissional).join(
+        User, User.id == Intervencao.profissional_id
+    )
+
+    q = q.filter(Intervencao.ativo == False)
+
+    rows = q.order_by(Intervencao.updated_at.desc()).limit(500).all()
+
+    return [
+        IntervencaoOut(
+            id=i.id,
+            data_atendimento=i.data_atendimento,
+            paciente_nome=i.paciente_nome,
+            data_nascimento=i.data_nascimento,
+            tipo_atendimento=i.tipo_atendimento,
+            motivo_atendimento=i.motivo_atendimento,
+            comorbidade=i.comorbidade,
+            tipos_intervencao=i.tipos_intervencao.split(";"),
+            resultado=i.resultado,
+            observacoes=i.observacoes,
+            supervisor_id=i.supervisor_id,
+            profissional=nome,
+            created_at=i.created_at,
+            updated_at=i.updated_at,
+            criado_por=i.criador.nome if i.criador else nome,
+            atualizado_por=i.atualizador.nome if i.atualizador else nome,
+            supervisor_nome=i.supervisor.nome if i.supervisor else None,
+        )
+        for i, nome, _ in rows
+    ]
+
 @app.get("/intervencoes", response_model=List[IntervencaoOut])
 def listar_intervencoes(
     data_inicio: Optional[date] = None,
