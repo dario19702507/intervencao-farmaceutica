@@ -217,9 +217,11 @@ def ensure_admin(user: User):
     if user.perfil != "admin":
         raise HTTPException(status_code=403, detail="Acesso restrito ao administrador")
 
-def ensure_not_reader(user: User):
-    if user.perfil == "leitor":
-        raise HTTPException(status_code=403, detail="Perfil sem permissão para alterar registros")
+def ensure_can_edit(user: User, item: Intervencao):
+    if user.perfil == "admin":
+        return
+    if user.categoria_profissional == "Estagiário" and item.profissional_id != user.id:
+        raise HTTPException(status_code=403, detail="Estagiário só pode editar os próprios registros")
 
 @app.on_event("startup")
 def seed_admin():
@@ -372,6 +374,8 @@ def atualizar_intervencao(
     if not item:
         raise HTTPException(status_code=404, detail="Intervenção não encontrada")
 
+    ensure_can_edit(current, item)
+
     if current.categoria_profissional == "Estagiário" and not payload.supervisor_id:
         raise HTTPException(status_code=400, detail="Supervisor obrigatório para estagiário")
 
@@ -418,6 +422,8 @@ def inativar_intervencao(
     item = db.get(Intervencao, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Registro não encontrado")
+
+    ensure_can_edit(current, item)
 
     item.ativo = False
     item.updated_by = current.id

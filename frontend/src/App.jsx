@@ -409,6 +409,18 @@ async function redefinirSenha(e) {
 
   const podeEditar = me?.perfil !== 'leitor';
 
+  function podeAlterarRegistro(r) {
+    if (!me) return false;
+    if (me.perfil === 'leitor') return false;
+    if (me.perfil === 'admin') return true;
+
+  if (me.categoria_profissional === 'Estagiário') {
+    return r.profissional === me.nome;
+  }
+
+  return true;
+}
+
   if (!token) {
     return (
       <main className="login">
@@ -641,12 +653,15 @@ async function redefinirSenha(e) {
 		    <td>{r.atualizado_por || '-'}</td>
 		    <td>{r.updated_at ? new Date(r.updated_at).toLocaleString('pt-BR') : '-'}</td>
 		    <td>
-  		    {podeEditar && (
-  		    <td style={{ display: 'flex', gap: 6 }}>
-    		      <button onClick={() => editarRegistro(r)}>Editar</button>
-		      <button onClick={() => inativarRegistro(r.id)}>Inativar</button>
-		    </td>
-)}
+		      {podeAlterarRegistro(r) ? (
+		        <div style={{ display: 'flex', gap: 6 }}>
+		        <button onClick={() => editarRegistro(r)}>Editar</button>
+		        <button onClick={() => inativarRegistro(r.id)}>Inativar</button>
+		      </div>
+		    ) : (
+		     '-'
+		    )}
+		 <th>Ações</th>
 		    </td>
                   </tr>
                 ))}
