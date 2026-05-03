@@ -756,7 +756,8 @@ async function redefinirSenha(e) {
           <th>Profissional</th>
           <th>Supervisor</th>
           <th>Inativado por</th>
-          <th>Data da inativação</th>
+	  <th>Motivo</th>
+	  <th>Data da inativação</th>
         </tr>
       </thead>
       <tbody>
@@ -769,7 +770,8 @@ async function redefinirSenha(e) {
             <td>{r.profissional}</td>
             <td>{r.supervisor_nome || '-'}</td>
             <td>{r.atualizado_por || '-'}</td>
-            <td>{r.updated_at ? new Date(r.updated_at).toLocaleString('pt-BR') : '-'}</td>
+	    <td>{r.motivo_inativacao || '-'}</td>
+	    <td>{r.updated_at ? new Date(r.updated_at).toLocaleString('pt-BR') : '-'}</td>
           </tr>
         ))}
       </tbody>

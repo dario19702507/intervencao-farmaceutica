@@ -168,6 +168,7 @@ class IntervencaoOut(IntervencaoCreate):
     criado_por: Optional[str] = None
     atualizado_por: Optional[str] = None
     supervisor_nome: Optional[str] = None
+    motivo_inativacao: Optional[str] = None
 
 class Indicadores(BaseModel):
     total_intervencoes: int
@@ -542,6 +543,7 @@ def listar_intervencoes_inativadas(
             criado_por=i.criador.nome if i.criador else nome,
             atualizado_por=i.atualizador.nome if i.atualizador else nome,
             supervisor_nome=i.supervisor.nome if i.supervisor else None,
+	    motivo_inativacao=i.motivo_inativacao,
         )
         for i, nome, _ in rows
     ]
@@ -587,6 +589,7 @@ def listar_intervencoes(
 	    updated_at=i.updated_at,
 	    criado_por=i.criador.nome if i.criador else nome,
 	    atualizado_por=i.atualizador.nome if i.atualizador else nome,
+	    motivo_inativacao=i.motivo_inativacao,
         )
         for i, nome, _ in rows
     ]
