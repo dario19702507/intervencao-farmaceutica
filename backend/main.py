@@ -161,6 +161,7 @@ class IntervencaoCreate(BaseModel):
     supervisor_id: Optional[int] = None
 
 class IntervencaoOut(IntervencaoCreate):
+    data_nascimento: Optional[date] = None
     id: int
     profissional: str
     created_at: datetime
