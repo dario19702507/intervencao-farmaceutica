@@ -237,6 +237,17 @@ def ensure_can_edit(user: User, item: Intervencao):
         return
     if user.categoria_profissional == "Estagiário" and item.profissional_id != user.id:
         raise HTTPException(status_code=403, detail="Estagiário só pode editar os próprios registros")
+def mascarar_nome(nome: str):
+    partes = nome.split()
+    mascarado = []
+
+    for parte in partes:
+        if len(parte) <= 2:
+            mascarado.append(parte[0] + "*")
+        else:
+            mascarado.append(parte[0] + "***")
+
+    return " ".join(mascarado)
 
 @app.on_event("startup")
 def seed_admin():
@@ -507,14 +518,14 @@ def exportar_intervencoes_csv(
         writer.writerow([
             i.id,
             i.data_atendimento,
-            i.paciente_nome,
+            mascarar_nome(i.paciente_nome) if current.perfil == "leitor" else i.paciente_nome,
             i.data_nascimento,
             i.tipo_atendimento,
             i.motivo_atendimento,
             i.comorbidade,
             i.tipos_intervencao,
             i.resultado,
-            i.observacoes or "",
+            "" if current.perfil == "leitor" else (i.observacoes or ""),
             nome,
             i.created_at
         ])
@@ -547,14 +558,14 @@ def listar_intervencoes_inativadas(
         IntervencaoOut(
             id=i.id,
             data_atendimento=i.data_atendimento,
-            paciente_nome=i.paciente_nome,
+            paciente_nome=mascarar_nome(i.paciente_nome) if current.perfil == "leitor" else i.paciente_nome,
             data_nascimento=i.data_nascimento,
             tipo_atendimento=i.tipo_atendimento,
             motivo_atendimento=i.motivo_atendimento,
             comorbidade=i.comorbidade,
             tipos_intervencao=i.tipos_intervencao.split(";"),
             resultado=i.resultado,
-            observacoes=i.observacoes,
+            observacoes=None if current.perfil == "leitor" else i.observacoes,
             supervisor_id=i.supervisor_id,
             profissional=nome,
             created_at=i.created_at,
