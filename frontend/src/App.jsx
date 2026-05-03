@@ -174,6 +174,13 @@ async function load() {
 
   try {
     const meRes = await fetch(`${API}/me`, { headers: authHeaders() });
+    if (meRes.status === 401) {
+     localStorage.clear();
+     setToken('');
+     setMe(null);
+     setMsg('Sessão expirada. Faça login novamente.');
+     return;
+}
     const meJson = await meRes.json();
     setMe(meJson);
 
