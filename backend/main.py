@@ -217,6 +217,10 @@ def ensure_admin(user: User):
     if user.perfil != "admin":
         raise HTTPException(status_code=403, detail="Acesso restrito ao administrador")
 
+def ensure_not_reader(user: User):
+    if user.perfil == "leitor":
+        raise HTTPException(status_code=403, detail="Perfil sem permissão para alterar registros")
+
 def ensure_can_edit(user: User, item: Intervencao):
     if user.perfil == "admin":
         return
