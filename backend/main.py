@@ -59,6 +59,7 @@ class Intervencao(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     ativo = Column(Boolean, default=True)
+    motivo_inativacao = Column(Text, nullable=True)
     usuario = relationship("User", foreign_keys=[profissional_id], back_populates="intervencoes")
     criador = relationship("User", foreign_keys=[created_by])
     atualizador = relationship("User", foreign_keys=[updated_by])
@@ -98,6 +99,12 @@ def aplicar_migracoes_simples():
         except Exception:
             conn.rollback()
 
+        try:
+            conn.exec_driver_sql("ALTER TABLE intervencoes ADD COLUMN motivo_inativacao TEXT")
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
 aplicar_migracoes_simples()
 
 app = FastAPI(title="Sistema de Intervenção Farmacêutica", version="1.0.0")
@@ -129,6 +136,9 @@ class PasswordReset(BaseModel):
 class ChangeOwnPassword(BaseModel):
     senha_atual: str
     nova_senha: str = Field(min_length=6)
+
+class InativarPayload(BaseModel):
+    motivo: str = Field(min_length=3)
 
 class UserOut(BaseModel):
     id: int
@@ -418,6 +428,7 @@ def atualizar_intervencao(
 @app.put("/intervencoes/{item_id}/inativar")
 def inativar_intervencao(
     item_id: int,
+    payload: InativarPayload,
     db: Session = Depends(get_db),
     current: User = Depends(get_current_user)
 ):
@@ -430,6 +441,7 @@ def inativar_intervencao(
     ensure_can_edit(current, item)
 
     item.ativo = False
+    item.motivo_inativacao = payload.motivo
     item.updated_by = current.id
     item.updated_at = datetime.utcnow()
 
