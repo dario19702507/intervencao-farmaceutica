@@ -278,35 +278,54 @@ useEffect(() => {
   load();
 }
 
-async function carregarInativados() {
-  const r = await fetch(`${API}/intervencoes/inativadas`, {
+  async function carregarInativados() {
+    const r = await fetch(`${API}/intervencoes/inativadas`, {
+      headers: authHeaders(),
+    });
+
+    if (!r.ok) {
+      setMsg('Erro ao carregar registros inativados.');
+      return;
+    }
+
+    setInativados(await r.json());
+  }
+
+  function editarRegistro(r) {
+    setForm({
+      data_atendimento: r.data_atendimento,
+      paciente_nome: r.paciente_nome,
+      data_nascimento: r.data_nascimento,
+      tipo_atendimento: r.tipo_atendimento,
+      motivo_atendimento: r.motivo_atendimento,
+      comorbidade: r.comorbidade,
+      tipos_intervencao: r.tipos_intervencao,
+      resultado: r.resultado,
+      observacoes: r.observacoes || '',
+      supervisor_id: r.supervisor_id || '',
+    });
+
+    setEditandoId(r.id);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function reativarRegistro(id) {
+  const ok = window.confirm('Deseja reativar este registro?');
+  if (!ok) return;
+
+  const r = await fetch(`${API}/intervencoes/${id}/reativar`, {
+    method: 'PUT',
     headers: authHeaders(),
   });
 
   if (!r.ok) {
-    setMsg('Erro ao carregar registros inativados.');
+    setMsg('Erro ao reativar registro.');
     return;
   }
 
-  setInativados(await r.json());
-}
-
-function editarRegistro(r) {
-  setForm({
-    data_atendimento: r.data_atendimento,
-    paciente_nome: r.paciente_nome,
-    data_nascimento: r.data_nascimento,
-    tipo_atendimento: r.tipo_atendimento,
-    motivo_atendimento: r.motivo_atendimento,
-    comorbidade: r.comorbidade,
-    tipos_intervencao: r.tipos_intervencao,
-    resultado: r.resultado,
-    observacoes: r.observacoes || '',
-    supervisor_id: r.supervisor_id || '',
-  });
-
-  setEditandoId(r.id);
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  setMsg('Registro reativado com sucesso.');
+  carregarInativados();
+  load();
 }
 
   async function inativarRegistro(id) {
@@ -758,6 +777,7 @@ async function redefinirSenha(e) {
           <th>Inativado por</th>
 	  <th>Motivo</th>
 	  <th>Data da inativação</th>
+	  <th>Ações</th>
         </tr>
       </thead>
       <tbody>
@@ -772,6 +792,9 @@ async function redefinirSenha(e) {
             <td>{r.atualizado_por || '-'}</td>
 	    <td>{r.motivo_inativacao || '-'}</td>
 	    <td>{r.updated_at ? new Date(r.updated_at).toLocaleString('pt-BR') : '-'}</td>
+	    <td>
+	      <button onClick={() => reativarRegistro(r.id)}>Reativar</button>
+	    </td>
           </tr>
         ))}
       </tbody>
