@@ -289,12 +289,22 @@ function editarRegistro(r) {
 }
 
   async function inativarRegistro(id) {
-    const ok = window.confirm('Deseja inativar este registro?');
+    const motivo = window.prompt('Informe o motivo da inativação:');
+
+    if (!motivo || motivo.trim().length < 3) {
+      setMsg('Informe um motivo com pelo menos 3 caracteres.');
+      return;
+  }
+
+    const ok = window.confirm('Confirma a inativação deste registro?');
     if (!ok) return;
 
     const r = await fetch(`${API}/intervencoes/${id}/inativar`, {
       method: 'PUT',
       headers: authHeaders(),
+      body: JSON.stringify({
+        motivo: motivo.trim(),
+      }),
     });
 
     if (!r.ok) {
