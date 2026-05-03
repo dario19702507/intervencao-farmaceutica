@@ -626,8 +626,7 @@ async function redefinirSenha(e) {
             <h2>Registros recentes</h2>
 	    <div style={{ maxHeight: '55vh', overflowY: 'auto' }}>
             <table>
-	    </div>
-              <thead>
+	      <thead>
                 <tr>
                   <th>Data</th>
                   <th>Paciente</th>
@@ -663,14 +662,14 @@ async function redefinirSenha(e) {
 		      </div>
 		    ) : (
 		     '-'
-		    )}
-		 <th>Ações</th>
+		    )}		 
 		    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </section>
+         </div>
+      </section>
         </>
       )}
 
@@ -715,43 +714,41 @@ async function redefinirSenha(e) {
 
     <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
       <table>
-
-    <table>
-      <thead>
-        <tr>
-          <th>Data</th>
-          <th>Paciente</th>
-          <th>Comorbidade</th>
-          <th>Resultado</th>
-          <th>Profissional</th>
-          <th>Supervisor</th>
-          <th>Inativado por</th>
-	  <th>Motivo</th>
-	  <th>Data da inativação</th>
-	  <th>Ações</th>
-        </tr>
-      </thead>
-      <tbody>
-        {inativados.map(r => (
-          <tr key={r.id}>
-            <td>{r.data_atendimento}</td>
-            <td>{r.paciente_nome}</td>
-            <td>{r.comorbidade}</td>
-            <td>{r.resultado}</td>
-            <td>{r.profissional}</td>
-            <td>{r.supervisor_nome || '-'}</td>
-            <td>{r.atualizado_por || '-'}</td>
-	    <td>{r.motivo_inativacao || '-'}</td>
-	    <td>{r.updated_at ? new Date(r.updated_at).toLocaleString('pt-BR') : '-'}</td>
-	    <td>
-	      <button onClick={() => reativarRegistro(r.id)}>Reativar</button>
-	    </td>
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Paciente</th>
+            <th>Comorbidade</th>
+            <th>Resultado</th>
+            <th>Profissional</th>
+            <th>Supervisor</th>
+            <th>Inativado por</th>
+	    <th>Motivo</th>
+	    <th>Data da inativação</th>
+	    <th>Ações</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
-</section>
+        </thead>
+        <tbody>
+          {inativados.map(r => (
+            <tr key={r.id}>
+              <td>{r.data_atendimento}</td>
+              <td>{r.paciente_nome}</td>
+              <td>{r.comorbidade}</td>
+              <td>{r.resultado}</td>
+              <td>{r.profissional}</td>
+              <td>{r.supervisor_nome || '-'}</td>
+              <td>{r.atualizado_por || '-'}</td>
+	      <td>{r.motivo_inativacao || '-'}</td>
+	      <td>{r.updated_at ? new Date(r.updated_at).toLocaleString('pt-BR') : '-'}</td>
+	      <td>
+	        <button onClick={() => reativarRegistro(r.id)}>Reativar</button>
+	      </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </section>
 )}
 
 {tab === 'dashboard' && (
@@ -759,15 +756,37 @@ async function redefinirSenha(e) {
     <h2>Dashboard</h2>
 
     <div className="kpis">
-      <strong>{indic?.total_intervenc
-
-    <div className="stats">
-      <div className="stat"><strong>{indic.total_intervencoes}</strong><span>Intervenções</span></div>
-      <div className="stat"><strong>{indic.total_pacientes}</strong><span>Pacientes</span></div>
-      <div className="stat"><strong>{indic.taxa_aceitacao}%</strong><span>Aceitação</span></div>
-      <div className="stat"><strong>{indic.taxa_acompanhamento}%</strong><span>Acompanhamento</span></div>
-      <div className="stat"><strong>{indic.taxa_encaminhamento}%</strong><span>Encaminhamento</span></div>
+      <strong>{indic?.total_intervencoes || 0}<span>intervenções</span></strong>
+      <strong>{indic?.total_pacientes || 0}<span>pacientes</span></strong>
+      <strong>{indic?.taxa_aceitacao || 0}%<span>aceitação</span></strong>
+      <strong>{indic?.taxa_acompanhamento || 0}%<span>acompanhamento</span></strong>
+      <strong>{indic?.taxa_encaminhamento || 0}%<span>encaminhamento</span></strong>
     </div>
+
+    <Chart title="Por tipo de intervenção" data={objToChart(indic?.por_tipo_intervencao)} />
+    <Chart title="Por resultado" data={objToChart(indic?.por_resultado)} />
+    <Chart title="Por comorbidade" data={objToChart(indic?.por_comorbidade)} />
+    <Chart title="Por faixa etária" data={objToChart(indic?.por_faixa_etaria)} />
+    <Chart title="Por profissional" data={objToChart(indic?.por_profissional)} />
+    <Chart title="Por categoria profissional" data={objToChart(indic?.por_categoria_profissional)} />
+
+    <TrendChart
+      title="Tendência mensal de intervenções"
+      data={tendenciaToChart(indic?.tendencia_mensal)}
+      dataKey="intervencoes"
+    />
+
+    <TrendChart
+      title="Tendência mensal de aceitação (%)"
+      data={tendenciaToChart(indic?.tendencia_mensal)}
+      dataKey="taxa_aceitacao"
+    />
+
+    <TrendChart
+      title="Tendência mensal de encaminhamento (%)"
+      data={tendenciaToChart(indic?.tendencia_mensal)}
+      dataKey="taxa_encaminhamento"
+    />
   </section>
 )}
       {tab === 'admin' && me?.perfil === 'admin' && (
