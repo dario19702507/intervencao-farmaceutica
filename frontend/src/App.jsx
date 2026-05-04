@@ -249,10 +249,14 @@ useEffect(() => {
   const method = editandoId ? 'PUT' : 'POST';
 
   const r = await fetch(url, {
-    method,
-    headers: authHeaders(),
-    body: JSON.stringify(form),
-  });
+  method,
+  headers: authHeaders(),
+  body: JSON.stringify({
+    ...form,
+    supervisor_id: form.supervisor_id ? Number(form.supervisor_id) : null,
+  }),
+});
+
 
   if (!r.ok) {
     setMsg(editandoId ? 'Erro ao atualizar.' : 'Erro ao salvar. Confira os campos.');
