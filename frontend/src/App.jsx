@@ -585,42 +585,7 @@ async function redefinirSenha(e) {
 
               </form>
           )}
-
-            <section className="card">
-              <h2>Indicadores</h2>
-              <div className="kpis">
-  		<strong>{indic?.total_intervencoes || 0}<span>intervenções</span></strong>
-  		<strong>{indic?.total_pacientes || 0}<span>pacientes</span></strong>
-  		<strong>{indic?.taxa_aceitacao || 0}%<span>aceitação</span></strong>
-  		<strong>{indic?.taxa_acompanhamento || 0}%<span>acompanhamento</span></strong>
-  		<strong>{indic?.taxa_encaminhamento || 0}%<span>encaminhamento</span></strong>
-</div>
-
-              <Chart title="Por tipo de intervenção" data={objToChart(indic?.por_tipo_intervencao)} />
-              <Chart title="Por resultado" data={objToChart(indic?.por_resultado)} />
-              <Chart title="Por comorbidade" data={objToChart(indic?.por_comorbidade)} />
-	      <Chart title="Por faixa etária" data={objToChart(indic?.por_faixa_etaria)} />
-	      <Chart title="Por profissional" data={objToChart(indic?.por_profissional)} />
-	      <Chart title="Por categoria profissional" data={objToChart(indic?.por_categoria_profissional)} />
-<TrendChart
-  title="Tendência mensal de intervenções"
-  data={tendenciaToChart(indic?.tendencia_mensal)}
-  dataKey="intervencoes"
-/>
-
-<TrendChart
-  title="Tendência mensal de aceitação (%)"
-  data={tendenciaToChart(indic?.tendencia_mensal)}
-  dataKey="taxa_aceitacao"
-/>
-
-<TrendChart
-  title="Tendência mensal de encaminhamento (%)"
-  data={tendenciaToChart(indic?.tendencia_mensal)}
-  dataKey="taxa_encaminhamento"
-/>
-            </section>
-          </section>
+       </section>
 
           <section className="card">
             <h2>Registros recentes</h2>
@@ -662,7 +627,7 @@ async function redefinirSenha(e) {
 		      </div>
 		    ) : (
 		     '-'
-		    )}		 
+		    )}
 		    </td>
                   </tr>
                 ))}
@@ -670,9 +635,8 @@ async function redefinirSenha(e) {
             </table>
          </div>
       </section>
-        </>
-      )}
-
+    </>
+  )}
 {tab === 'conta' && (
   <section className="grid">
     <form className="card" onSubmit={trocarMinhaSenha}>
