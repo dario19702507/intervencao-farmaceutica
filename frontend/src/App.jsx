@@ -719,6 +719,59 @@ async function redefinirSenha(e) {
   <section className="card">
     <h2>Dashboard</h2>
 
+<form className="card" onSubmit={aplicarFiltros} style={{ marginBottom: 16 }}>
+  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end' }}>
+    <label>Período
+      <select
+        value={filtros.periodo}
+        onChange={e => setFiltros({ ...filtros, periodo: e.target.value })}
+      >
+        <option value="semana">Últimos 7 dias</option>
+        <option value="quinzena">Últimos 15 dias</option>
+        <option value="mes">Mês atual</option>
+        <option value="ano">Ano atual</option>
+        <option value="customizado">Customizado</option>
+      </select>
+    </label>
+
+    {filtros.periodo === 'customizado' && (
+      <>
+        <label>Início
+          <input
+            type="date"
+            value={filtros.data_inicio}
+            onChange={e => setFiltros({ ...filtros, data_inicio: e.target.value })}
+          />
+        </label>
+
+        <label>Fim
+          <input
+            type="date"
+            value={filtros.data_fim}
+            onChange={e => setFiltros({ ...filtros, data_fim: e.target.value })}
+          />
+        </label>
+      </>
+    )}
+
+    <label>Categoria profissional
+      <select
+        value={filtros.categoria_profissional}
+        onChange={e => setFiltros({ ...filtros, categoria_profissional: e.target.value })}
+      >
+        <option value="">Todas</option>
+        <option value="Farmacêutico">Farmacêutico</option>
+        <option value="Técnico">Técnico</option>
+        <option value="Estagiário">Estagiário</option>
+        <option value="Docente">Docente</option>
+      </select>
+    </label>
+
+    <button type="submit">Aplicar</button>
+    <button type="button" onClick={limparFiltros}>Limpar</button>
+  </div>
+</form>
+
     <div className="kpis">
       <strong>{indic?.total_intervencoes || 0}<span>intervenções</span></strong>
       <strong>{indic?.total_pacientes || 0}<span>pacientes</span></strong>
