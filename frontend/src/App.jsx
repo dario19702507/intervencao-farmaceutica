@@ -534,11 +534,13 @@ async function redefinirSenha(e) {
               <form className="card" onSubmit={salvar}>
                 <h2>{editandoId ? 'Editar intervenção' : 'Nova intervenção'}</h2>
 
+		<h3 style={{ marginTop: 16, marginBottom: 8 }}>Atendimento</h3>
                 <label>Data de atendimento
                   <input type="date" required value={form.data_atendimento} onChange={e => setForm({ ...form, data_atendimento: e.target.value })} />
                 </label>
   
-                <label>Paciente
+                <h3 style={{ marginTop: 16, marginBottom: 8 }}>Dados do paciente</h3>
+		<label>Paciente
                   <input required value={form.paciente_nome} onChange={e => setForm({ ...form, paciente_nome: e.target.value.toUpperCase() })} placeholder="NOME COMPLETO" />
                 </label>
   
@@ -564,6 +566,7 @@ async function redefinirSenha(e) {
                   </select>
                 </label>
 
+		<h3 style={{ marginTop: 16, marginBottom: 8 }}>Intervenção farmacêutica</h3>
                 <fieldset>
                   <legend>Tipo de intervenção</legend>
                   {op?.tipos_intervencao?.map(t => (
@@ -584,6 +587,7 @@ async function redefinirSenha(e) {
                   <textarea value={form.observacoes} onChange={e => setForm({ ...form, observacoes: e.target.value })} />
                 </label>
               
+		<h3 style={{ marginTop: 16, marginBottom: 8 }}>Supervisão técnica</h3>
 	        <label>Supervisor técnico {me?.categoria_profissional === 'Estagiário' ? '(obrigatório)' : '(opcional)'}
   	   	<select
     	  	  value={form.supervisor_id}
