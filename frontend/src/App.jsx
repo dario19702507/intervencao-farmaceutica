@@ -581,7 +581,32 @@ async function redefinirSenha(e) {
 	  	  </select>
 	  	</label>
 
-  	    <button>{editandoId ? 'Atualizar intervenção' : 'Salvar intervenção'}</button>
+  	    <div style={{ display: 'flex', gap: 8 }}>
+  <button>{editandoId ? 'Atualizar intervenção' : 'Salvar intervenção'}</button>
+
+  {editandoId && (
+    <button
+      type="button"
+      onClick={() => {
+        setEditandoId(null);
+        setForm({
+          data_atendimento: hoje,
+          paciente_nome: '',
+          data_nascimento: '',
+          tipo_atendimento: 'Presencial',
+          motivo_atendimento: 'Documentação (inclusão/renovação/adequação)',
+          comorbidade: 'Asma/DPOC',
+          tipos_intervencao: ['Orientação documental'],
+          resultado: 'Aceitação',
+          observacoes: '',
+          supervisor_id: '',
+        });
+      }}
+    >
+      Cancelar edição
+    </button>
+  )}
+</div>
 
               </form>
           )}
