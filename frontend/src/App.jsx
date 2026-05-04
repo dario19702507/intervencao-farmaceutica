@@ -49,6 +49,18 @@ function App() {
   const [editandoId, setEditandoId] = useState(null);
   const [profissionais, setProfissionais] = useState([]);
   const [supervisores, setSupervisores] = useState([]);
+  const [filtrosLista, setFiltrosLista] = useState({
+    paciente: '',
+    profissional: '',
+    comorbidade: '',
+});
+  const listaFiltrada = lista.filter(r => {
+    const pacienteOk = r.paciente_nome?.toLowerCase().includes(filtrosLista.paciente.toLowerCase());
+    const profissionalOk = !filtrosLista.profissional || r.profissional === filtrosLista.profissional;
+    const comorbidadeOk = !filtrosLista.comorbidade || r.comorbidade === filtrosLista.comorbidade;
+
+  return pacienteOk && profissionalOk && comorbidadeOk;
+});
   const [filtros, setFiltros] = useState({
   periodo: 'mes',
   data_inicio: '',
@@ -618,6 +630,46 @@ async function redefinirSenha(e) {
 
           <section className="card">
             <h2>Registros recentes</h2>
+<div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+  <label>Buscar paciente
+    <input
+      value={filtrosLista.paciente}
+      onChange={e => setFiltrosLista({ ...filtrosLista, paciente: e.target.value })}
+      placeholder="Digite parte do nome"
+    />
+  </label>
+
+  <label>Profissional
+    <select
+      value={filtrosLista.profissional}
+      onChange={e => setFiltrosLista({ ...filtrosLista, profissional: e.target.value })}
+    >
+      <option value="">Todos</option>
+      {[...new Set(lista.map(r => r.profissional).filter(Boolean))].map(p => (
+        <option key={p} value={p}>{p}</option>
+      ))}
+    </select>
+  </label>
+
+  <label>Comorbidade
+    <select
+      value={filtrosLista.comorbidade}
+      onChange={e => setFiltrosLista({ ...filtrosLista, comorbidade: e.target.value })}
+    >
+      <option value="">Todas</option>
+      {[...new Set(lista.map(r => r.comorbidade).filter(Boolean))].map(c => (
+        <option key={c} value={c}>{c}</option>
+      ))}
+    </select>
+  </label>
+
+  <button
+    type="button"
+    onClick={() => setFiltrosLista({ paciente: '', profissional: '', comorbidade: '' })}
+  >
+    Limpar
+  </button>
+</div>
 	    <div style={{ maxHeight: '55vh', overflowY: 'auto' }}>
             <table>
 	      <thead>
@@ -636,7 +688,7 @@ async function redefinirSenha(e) {
                 </tr>
               </thead>
               <tbody>
-                {lista.map(r => (
+                {listaFiltrada.map(r => (
                   <tr key={r.id}>
                     <td>{r.data_atendimento}</td>
                     <td>{r.paciente_nome}</td>
