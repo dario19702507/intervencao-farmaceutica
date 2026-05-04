@@ -88,7 +88,7 @@ function App() {
     tipo_atendimento: 'Presencial',
     motivo_atendimento: 'Documentação (inclusão/renovação/adequação)',
     comorbidade: 'Asma/DPOC',
-    tipos_intervencao: ['Orientação documental'],
+    tipos_intervencao: [],
     resultado: 'Aceitação',
     observacoes: '',
     supervisor_id: '',
@@ -284,7 +284,7 @@ useEffect(() => {
     tipo_atendimento: 'Presencial',
     motivo_atendimento: 'Documentação (inclusão/renovação/adequação)',
     comorbidade: 'Asma/DPOC',
-    tipos_intervencao: ['Orientação documental'],
+    tipos_intervencao: [],
     resultado: 'Aceitação',
     observacoes: '',
     supervisor_id: '',
@@ -545,7 +545,7 @@ async function redefinirSenha(e) {
                 </label>
   
                 <label>Data de nascimento
-                  <input type="date" required value={form.data_nascimento} onChange={e => setForm({ ...form, data_nascimento: e.target.value })} />
+                  <input type="date" value={form.data_nascimento} onChange={e => setForm({ ...form, data_nascimento: e.target.value })} />
                 </label>
   
                 <label>Tipo de atendimento
@@ -616,7 +616,7 @@ async function redefinirSenha(e) {
           tipo_atendimento: 'Presencial',
           motivo_atendimento: 'Documentação (inclusão/renovação/adequação)',
           comorbidade: 'Asma/DPOC',
-          tipos_intervencao: ['Orientação documental'],
+          tipos_intervencao: [],
           resultado: 'Aceitação',
           observacoes: '',
           supervisor_id: '',

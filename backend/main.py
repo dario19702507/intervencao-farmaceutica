@@ -45,7 +45,7 @@ class Intervencao(Base):
     id = Column(Integer, primary_key=True, index=True)
     data_atendimento = Column(Date, nullable=False, index=True)
     paciente_nome = Column(String, nullable=False, index=True)
-    data_nascimento = Column(Date, nullable=False)
+    data_nascimento = Column(Date, nullable=True)
     tipo_atendimento = Column(String, nullable=False)  # Presencial/Remoto
     motivo_atendimento = Column(String, nullable=False)
     comorbidade = Column(String, nullable=False)
@@ -151,7 +151,7 @@ class UserOut(BaseModel):
 class IntervencaoCreate(BaseModel):
     data_atendimento: date
     paciente_nome: str
-    data_nascimento: date
+    data_nascimento: Optional[date] = None
     tipo_atendimento: str
     motivo_atendimento: str
     comorbidade: str
@@ -637,7 +637,9 @@ def count_by(db, column, data_inicio=None, data_fim=None, profissional_id=None, 
         q = q.filter(User.categoria_profissional == categoria_profissional)
     return {str(k): v for k, v in q.all()}
 
-def calcular_faixa_etaria(data_nascimento: date):
+def calcular_faixa_etaria(data_nascimento: Optional[date]):
+    if not data_nascimento:
+        return "Sem informação"
     hoje = date.today()
     idade = hoje.year - data_nascimento.year - (
         (hoje.month, hoje.day) < (data_nascimento.month, data_nascimento.day)
