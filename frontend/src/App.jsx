@@ -505,11 +505,11 @@ async function redefinirSenha(e) {
   return (
     <main>
 <header>
-  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
     <img
       src="/logo-farmacia-escola.png"
       alt="Farmácia Escola UFMS"
-      style={{ height: 70 }}
+      style={{ height: 48, width: 'auto', objectFit: 'contain' }}
     />
 
     <div>
@@ -520,7 +520,7 @@ async function redefinirSenha(e) {
     <img
       src="/logo-ufms.png"
       alt="Universidade Federal de Mato Grosso do Sul"
-      style={{ height: 60 }}
+      style={{ height: 42, width: 'auto', objectFit: 'contain' }}
     />
   </div>
 
