@@ -517,7 +517,7 @@ async function redefinirSenha(e) {
     <img
       src="/logo-farmacia-escola.png"
       alt="Farmácia Escola UFMS"
-      style={{ height: 92, width: 'auto', objectFit: 'contain' }}
+      style={{ height: 112, width: 'auto', objectFit: 'contain' }}
     />
 
     <div style={{ textAlign: 'center' }}>
@@ -535,7 +535,7 @@ async function redefinirSenha(e) {
   <nav
     style={{
       display: 'flex',
-      gap: 8,
+      gap: 5,
       justifyContent: 'center',
       flexWrap: 'wrap',
       marginTop: 12,
