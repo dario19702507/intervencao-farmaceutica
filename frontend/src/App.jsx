@@ -504,6 +504,10 @@ async function redefinirSenha(e) {
           <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="senha" />
           <button>Entrar</button>
           {msg && <b>{msg}</b>}
+        <div style={{ marginTop: 16, textAlign: 'center', fontSize: 12, opacity: 0.75, lineHeight: 1.4 }}>
+          <div>Sistema desenvolvido por Dario César Brum Arguello</div>
+          <div>Mestrado Profissional em Saúde da Família · UFMS</div>
+        </div>
         </form>
       </main>
     );
