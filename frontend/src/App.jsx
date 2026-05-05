@@ -505,14 +505,22 @@ async function redefinirSenha(e) {
   return (
     <main>
 <header>
-  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+  <div
+    style={{
+      display: 'grid',
+      gridTemplateColumns: '120px 1fr 120px',
+      alignItems: 'center',
+      gap: 16,
+      width: '100%',
+    }}
+  >
     <img
       src="/logo-farmacia-escola.png"
       alt="Farmácia Escola UFMS"
-      style={{ height: 48, width: 'auto', objectFit: 'contain' }}
+      style={{ height: 72, width: 'auto', objectFit: 'contain' }}
     />
 
-    <div>
+    <div style={{ textAlign: 'center' }}>
       <h1>Sistema de Intervenção Farmacêutica</h1>
       <p>Coleta de dados, acompanhamento e indicadores assistenciais</p>
     </div>
@@ -520,11 +528,19 @@ async function redefinirSenha(e) {
     <img
       src="/logo-ufms.png"
       alt="Universidade Federal de Mato Grosso do Sul"
-      style={{ height: 42, width: 'auto', objectFit: 'contain' }}
+      style={{ height: 52, width: 'auto', objectFit: 'contain', justifySelf: 'end' }}
     />
   </div>
 
-  <div style={{ display: 'flex', gap: 8 }}>
+  <nav
+    style={{
+      display: 'flex',
+      gap: 8,
+      justifyContent: 'center',
+      flexWrap: 'wrap',
+      marginTop: 12,
+    }}
+  >
     <button onClick={() => setTab('intervencoes')}>Intervenções</button>
     <button onClick={() => setTab('dashboard')}>Dashboard</button>
     <button onClick={() => setTab('conta')}>Minha conta</button>
@@ -541,7 +557,7 @@ async function redefinirSenha(e) {
     )}
 
     <button onClick={() => { localStorage.clear(); setToken(''); }}>Sair</button>
-  </div>
+  </nav>
 </header>
 
       {msg && <div className="alert">{msg}</div>}
