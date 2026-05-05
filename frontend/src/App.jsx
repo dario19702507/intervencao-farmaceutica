@@ -504,25 +504,45 @@ async function redefinirSenha(e) {
 
   return (
     <main>
-      <header>
-        <div>
-          <h1>Sistema de Intervenção Farmacêutica</h1>
-          <p>Coleta de dados, acompanhamento e indicadores assistenciais</p>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => setTab('intervencoes')}>Intervenções</button>
-	  <button onClick={() => setTab('dashboard')}>Dashboard</button>
-	  <button onClick={() => setTab('conta')}>Minha conta</button>
-	  <button onClick={exportarCSV}>Exportar CSV</button>
-          {me?.perfil === 'admin' && <button onClick={() => setTab('admin')}>Administração</button>}
-          {me?.perfil === 'admin' && (
-            <button onClick={() => { setTab('auditoria'); carregarInativados(); }}>
-   	      Auditoria
- 	    </button>
-          )}
-          <button onClick={() => { localStorage.clear(); setToken(''); }}>Sair</button>
-        </div>
-      </header>
+<header>
+  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+    <img
+      src="/logo-farmacia-escola.png"
+      alt="Farmácia Escola UFMS"
+      style={{ height: 70 }}
+    />
+
+    <div>
+      <h1>Sistema de Intervenção Farmacêutica</h1>
+      <p>Coleta de dados, acompanhamento e indicadores assistenciais</p>
+    </div>
+
+    <img
+      src="/logo-ufms.png"
+      alt="Universidade Federal de Mato Grosso do Sul"
+      style={{ height: 60 }}
+    />
+  </div>
+
+  <div style={{ display: 'flex', gap: 8 }}>
+    <button onClick={() => setTab('intervencoes')}>Intervenções</button>
+    <button onClick={() => setTab('dashboard')}>Dashboard</button>
+    <button onClick={() => setTab('conta')}>Minha conta</button>
+    <button onClick={exportarCSV}>Exportar CSV</button>
+
+    {me?.perfil === 'admin' && (
+      <button onClick={() => setTab('admin')}>Administração</button>
+    )}
+
+    {me?.perfil === 'admin' && (
+      <button onClick={() => { setTab('auditoria'); carregarInativados(); }}>
+        Auditoria
+      </button>
+    )}
+
+    <button onClick={() => { localStorage.clear(); setToken(''); }}>Sair</button>
+  </div>
+</header>
 
       {msg && <div className="alert">{msg}</div>}
 
