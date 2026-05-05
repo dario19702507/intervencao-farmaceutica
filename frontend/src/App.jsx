@@ -491,8 +491,15 @@ async function redefinirSenha(e) {
     return (
       <main className="login">
         <form onSubmit={login} className="card">
-          <h1>Intervenção Farmacêutica</h1>
-          <p>Acesso multiusuário</p>
+  <div style={{ textAlign: 'center', marginBottom: 12 }}>
+    <img
+      src="/logo-farmacia-escola.png"
+      alt="Farmácia Escola UFMS"
+      style={{ height: 180, width: 'auto', objectFit: 'contain', marginBottom: 8 }}
+    />
+    <h1>Intervenção Farmacêutica</h1>
+    <p>Acesso multiusuário</p>
+  </div>
           <input value={email} onChange={e => setEmail(e.target.value)} placeholder="e-mail" />
           <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="senha" />
           <button>Entrar</button>
