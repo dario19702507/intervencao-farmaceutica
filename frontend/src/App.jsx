@@ -850,6 +850,38 @@ async function redefinirSenha(e) {
 {tab === 'dashboard' && (
   <section className="card">
     <h2>Dashboard</h2>
+<div style={{ marginBottom: 12 }}>
+  <button
+    onClick={async () => {
+      const hoje = new Date();
+      const ano = hoje.getFullYear();
+      const mes = hoje.getMonth() + 1;
+
+      const url = `${API}/relatorios/mensal/pdf?ano=${ano}&mes=${mes}`;
+
+      const r = await fetch(url, {
+        headers: authHeaders(),
+      });
+
+      if (!r.ok) {
+        setMsg('Erro ao gerar relatório.');
+        return;
+      }
+
+      const blob = await r.blob();
+      const link = document.createElement('a');
+
+      link.href = window.URL.createObjectURL(blob);
+      link.download = `relatorio_${ano}_${mes}.pdf`;
+
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }}
+  >
+    Gerar relatório mensal (PDF)
+  </button>
+</div>
 
 <form className="card" onSubmit={aplicarFiltros} style={{ marginBottom: 16 }}>
   <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end' }}>
