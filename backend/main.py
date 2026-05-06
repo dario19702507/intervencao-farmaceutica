@@ -12,6 +12,9 @@ from passlib.context import CryptContext
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, Column, Integer, String, Date, DateTime, ForeignKey, Text, Boolean, func
 from sqlalchemy.orm import declarative_base, sessionmaker, Session, relationship
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import cm
+from reportlab.pdfgen import canvas
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./intervencoes.db")
 SECRET_KEY = os.getenv("SECRET_KEY", "troque-esta-chave-em-producao")
@@ -763,4 +766,142 @@ def indicadores(
         por_categoria_profissional=por_categoria_profissional,
         tendencia_mensal=tendencia_mensal,
         por_faixa_etaria=faixas_etarias,
+    )
+@app.get("/relatorios/mensal/pdf")
+def relatorio_mensal_pdf(
+    ano: int,
+    mes: int,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user)
+):
+    inicio = date(ano, mes, 1)
+
+    if mes == 12:
+        fim = date(ano + 1, 1, 1)
+    else:
+        fim = date(ano, mes + 1, 1)
+
+    registros = (
+        db.query(Intervencao)
+        .filter(Intervencao.ativo == True)
+        .filter(Intervencao.data_atendimento >= inicio)
+        .filter(Intervencao.data_atendimento < fim)
+        .all()
+    )
+
+    total = len(registros)
+    pacientes = len(set(r.paciente_nome for r in registros))
+
+    aceitos = sum(1 for r in registros if r.resultado == "Aceitação")
+    acompanhamentos = sum(1 for r in registros if r.resultado == "Acompanhamento do paciente")
+    encaminhamentos = sum(1 for r in registros if "Encaminhamentos" in (r.tipos_intervencao or ""))
+
+    taxa_aceitacao = round((aceitos / total) * 100, 2) if total else 0
+    taxa_acompanhamento = round((acompanhamentos / total) * 100, 2) if total else 0
+    taxa_encaminhamento = round((encaminhamentos / total) * 100, 2) if total else 0
+
+    def contar(campo):
+        dados = {}
+        for r in registros:
+            valor = getattr(r, campo) or "Não informado"
+            dados[valor] = dados.get(valor, 0) + 1
+        return dados
+
+    def contar_tipos():
+        dados = {}
+        for r in registros:
+            for t in (r.tipos_intervencao or "").split(";"):
+                if t:
+                    dados[t] = dados.get(t, 0) + 1
+        return dados
+
+    por_resultado = contar("resultado")
+    por_comorbidade = contar("comorbidade")
+    por_tipo = contar_tipos()
+
+    por_profissional = {}
+    for r in registros:
+        user = db.query(User).filter(User.id == r.profissional_id).first()
+        nome = user.nome if user else "Não informado"
+        por_profissional[nome] = por_profissional.get(nome, 0) + 1
+
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    largura, altura = A4
+
+    y = altura - 2 * cm
+
+    pdf.setFont("Helvetica-Bold", 14)
+    pdf.drawString(2 * cm, y, "Sistema de Intervenção Farmacêutica")
+    y -= 0.7 * cm
+
+    pdf.setFont("Helvetica", 11)
+    pdf.drawString(2 * cm, y, f"Relatório mensal - {mes:02d}/{ano}")
+    y -= 0.6 * cm
+    pdf.drawString(2 * cm, y, "Farmácia Escola - Universidade Federal de Mato Grosso do Sul")
+    y -= 1.0 * cm
+
+    pdf.setFont("Helvetica-Bold", 12)
+    pdf.drawString(2 * cm, y, "Resumo do período")
+    y -= 0.6 * cm
+
+    pdf.setFont("Helvetica", 10)
+    resumo = [
+        f"Total de intervenções: {total}",
+        f"Total de pacientes: {pacientes}",
+        f"Taxa de aceitação: {taxa_aceitacao}%",
+        f"Taxa de acompanhamento: {taxa_acompanhamento}%",
+        f"Taxa de encaminhamento: {taxa_encaminhamento}%",
+    ]
+
+    for linha in resumo:
+        pdf.drawString(2 * cm, y, linha)
+        y -= 0.45 * cm
+
+    def escrever_secao(titulo, dados):
+        nonlocal y
+
+        if y < 4 * cm:
+            pdf.showPage()
+            y = altura - 2 * cm
+
+        y -= 0.4 * cm
+        pdf.setFont("Helvetica-Bold", 12)
+        pdf.drawString(2 * cm, y, titulo)
+        y -= 0.5 * cm
+
+        pdf.setFont("Helvetica", 10)
+
+        if not dados:
+            pdf.drawString(2 * cm, y, "Sem registros no período.")
+            y -= 0.45 * cm
+            return
+
+        for chave, valor in sorted(dados.items(), key=lambda x: str(x[0])):
+            if y < 2.5 * cm:
+                pdf.showPage()
+                y = altura - 2 * cm
+                pdf.setFont("Helvetica", 10)
+
+            texto = f"{chave}: {valor}"
+            pdf.drawString(2 * cm, y, texto[:110])
+            y -= 0.42 * cm
+
+    escrever_secao("Distribuição por resultado", por_resultado)
+    escrever_secao("Distribuição por comorbidade", por_comorbidade)
+    escrever_secao("Distribuição por tipo de intervenção", por_tipo)
+    escrever_secao("Produção por profissional", por_profissional)
+
+    pdf.setFont("Helvetica-Oblique", 8)
+    pdf.drawString(2 * cm, 1.5 * cm, f"Gerado por {current.nome} em {datetime.utcnow().strftime('%d/%m/%Y %H:%M')} UTC")
+
+    pdf.save()
+    buffer.seek(0)
+
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename=relatorio_mensal_{ano}_{mes:02d}.pdf"
+        }
     )
