@@ -18,6 +18,8 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
 from reportlab.pdfgen import canvas
 from routers.consultorio import router as consultorio_router
+from routers.bioimpedancia import router as bioimpedancia_router
+from routers.servicos_rapidos import router as servicos_rapidos_router
 from routers.notificacoes import router as notificacoes_router
 from routers.pacientes import router as pacientes_router
 
@@ -119,6 +121,8 @@ aplicar_migracoes_simples()
 app = FastAPI(title="Sistema de Intervenção Farmacêutica", version="1.0.0")
 
 app.include_router(consultorio_router)
+app.include_router(bioimpedancia_router)
+app.include_router(servicos_rapidos_router)
 app.include_router(notificacoes_router)
 app.include_router(pacientes_router)
 
