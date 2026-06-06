@@ -1,26 +1,58 @@
-from datetime import datetime, date, timedelta
+"""
+Pacote de Reorganizacao 4 - Notificacoes
+
+Cria/atualiza routers/notificacoes.py e inclui o router no main.py.
+Mantem as URLs atuais usadas pelo frontend:
+- GET  /consultorio/agenda/notificacoes
+- POST /consultorio/agenda/notificacoes/gerar
+- GET  /consultorio/agenda/notificacoes/listar
+- PUT  /consultorio/agenda/notificacoes/{notificacao_id}/status
+
+Este pacote nao remove rotas antigas do consultorio.py. A limpeza vem depois da validacao.
+"""
+
+from pathlib import Path
+from datetime import datetime
+import shutil
+
+BASE = Path.cwd()
+ROUTERS = BASE / "routers"
+BACKUP = BASE / f"backup_reorganizacao_pacote4_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+
+def backup_file(path: Path):
+    if path.exists():
+        BACKUP.mkdir(exist_ok=True)
+        destino = BACKUP / path.name
+        shutil.copy2(path, destino)
+        print(f"Backup criado: {destino}")
+
+
+def ensure_dir(path: Path):
+    path.mkdir(parents=True, exist_ok=True)
+
+
+def write_notificacoes_router():
+    ensure_dir(ROUTERS)
+    path = ROUTERS / "notificacoes.py"
+    backup_file(path)
+
+    content = '''from datetime import datetime, date, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from routers.consultorio import (
+from models.consultorio_models import (
     AgendaIntegrada,
     NotificacaoAgenda,
+)
+from schemas.consultorio_schemas import NotificacaoAgendaUpdate
+from routers.utils_consultorio import (
     get_db_consultorio,
     get_current_user_consultorio,
     registrar_auditoria,
 )
-
-from pydantic import BaseModel
-from typing import Optional
-from datetime import datetime
-
-class NotificacaoAgendaUpdate(BaseModel):
-    status: Optional[str] = None
-    data_envio: Optional[datetime] = None
-    erro_envio: Optional[str] = None
-    canal: Optional[str] = None
 
 router = APIRouter(
     prefix="/consultorio/agenda/notificacoes",
@@ -293,3 +325,45 @@ def atualizar_status_notificacao_agenda(
         "mensagem": "Status da notificação atualizado.",
         "notificacao": notificacao,
     }
+'''
+    path.write_text(content, encoding="utf-8")
+    print(f"Arquivo criado/atualizado: {path}")
+
+
+def update_main():
+    path = BASE / "main.py"
+    backup_file(path)
+    text = path.read_text(encoding="utf-8")
+
+    import_line = "from routers.notificacoes import router as notificacoes_router\n"
+    if import_line not in text:
+        marker = "from routers.consultorio import router as consultorio_router\n"
+        if marker in text:
+            text = text.replace(marker, marker + import_line)
+        else:
+            text = import_line + text
+
+    include_line = "app.include_router(notificacoes_router)\n"
+    if include_line not in text:
+        marker = "app.include_router(consultorio_router)\n"
+        if marker in text:
+            text = text.replace(marker, marker + include_line)
+        else:
+            text += "\n" + include_line
+
+    path.write_text(text, encoding="utf-8")
+    print("main.py atualizado com notificacoes_router.")
+
+
+def main():
+    write_notificacoes_router()
+    update_main()
+    print("\nPacote 4 aplicado.")
+    print("Agora execute:")
+    print("python -m py_compile routers/notificacoes.py")
+    print("python -m py_compile main.py")
+    print("uvicorn main:app --reload")
+
+
+if __name__ == "__main__":
+    main()
