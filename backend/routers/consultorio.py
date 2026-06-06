@@ -1,4 +1,6 @@
 from io import BytesIO
+from dotenv import load_dotenv
+load_dotenv()
 from fastapi.responses import StreamingResponse
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
