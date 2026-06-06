@@ -1,0 +1,141 @@
+import { useEffect, useState } from "react";
+import { api } from "../../api/api";
+
+export default function IndicadoresCientificos() {
+  const [dados, setDados] = useState(null);
+  const [dataInicio, setDataInicio] = useState("");
+  const [dataFim, setDataFim] = useState("");
+
+  useEffect(() => {
+    carregarIndicadores();
+  }, [dataInicio, dataFim]);
+
+  async function carregarIndicadores() {
+    try {
+      const params = {};
+
+      if (dataInicio) params.data_inicio = dataInicio;
+      if (dataFim) params.data_fim = dataFim;
+
+      const response = await api.get("/consultorio/indicadores-cientificos", {
+        params,
+      });
+
+      setDados(response.data);
+    } catch (error) {
+      console.error("Erro ao carregar indicadores científicos:", error);
+    }
+  }
+
+  return (
+    <div>
+      <h2>Indicadores Científicos</h2>
+
+      <p className="muted">
+        Métricas consolidadas para análise epidemiológica, assistencial e científica.
+      </p>
+
+      <div className="filters-card">
+        <div className="filters-grid">
+          <div>
+            <label>Data inicial</label>
+            <input
+              className="input"
+              type="date"
+              value={dataInicio}
+              onChange={(e) => setDataInicio(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label>Data final</label>
+            <input
+              className="input"
+              type="date"
+              value={dataFim}
+              onChange={(e) => setDataFim(e.target.value)}
+            />
+          </div>
+
+          <div className="filter-actions">
+            <button
+              className="secondary-button"
+              onClick={() => {
+                setDataInicio("");
+                setDataFim("");
+              }}
+            >
+              Limpar filtros
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {dados && (
+        <>
+          <h3 className="dashboard-section-title">Indicadores assistenciais</h3>
+
+          <div className="kpi-grid">
+            <div className="kpi-card general">
+              <span>Total de atendimentos</span>
+              <strong>{dados.assistencial.total_atendimentos}</strong>
+            </div>
+
+            <div className="kpi-card success">
+              <span>Total de intervenções</span>
+              <strong>{dados.assistencial.total_intervencoes}</strong>
+            </div>
+          </div>
+
+          <h3 className="dashboard-section-title">Indicadores epidemiológicos</h3>
+
+          <div className="kpi-grid">
+            <div className="kpi-card warning">
+              <span>Pressão alterada</span>
+              <strong>{dados.epidemiologicos.pressao_alterada}</strong>
+            </div>
+
+            <div className="kpi-card warning">
+              <span>Glicemia alterada</span>
+              <strong>{dados.epidemiologicos.glicemia_alterada}</strong>
+            </div>
+
+            <div className="kpi-card danger">
+              <span>Obesidade</span>
+              <strong>{dados.epidemiologicos.obesidade}</strong>
+            </div>
+
+            <div className="kpi-card moderate">
+              <span>PFE alterado</span>
+              <strong>{dados.epidemiologicos.pfe_alterado}</strong>
+            </div>
+          </div>
+
+          <h3 className="dashboard-section-title">Indicadores clínicos</h3>
+
+          <div className="kpi-grid">
+            <div className="kpi-card success">
+              <span>Intervenções aceitas</span>
+              <strong>{dados.clinicos.intervencoes_aceitas}</strong>
+            </div>
+
+            <div className="kpi-card danger">
+              <span>Encaminhamentos</span>
+              <strong>{dados.clinicos.encaminhamentos}</strong>
+            </div>
+
+            <div className="kpi-card success">
+              <span>Taxa de aceitação</span>
+              <strong>{dados.clinicos.taxa_aceitacao}%</strong>
+            </div>
+
+            <div className="kpi-card warning">
+              <span>Taxa de encaminhamento</span>
+              <strong>{dados.clinicos.taxa_encaminhamento}%</strong>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

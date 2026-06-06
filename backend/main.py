@@ -15,6 +15,8 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session, relationship
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
 from reportlab.pdfgen import canvas
+from routers.consultorio import router as consultorio_router
+from routers.pacientes import router as pacientes_router
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./intervencoes.db")
 SECRET_KEY = os.getenv("SECRET_KEY", "troque-esta-chave-em-producao")
@@ -67,7 +69,8 @@ class Intervencao(Base):
     criador = relationship("User", foreign_keys=[created_by])
     atualizador = relationship("User", foreign_keys=[updated_by])
     supervisor = relationship("User", foreign_keys=[supervisor_id])
-Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    
 def aplicar_migracoes_simples():
     with engine.connect() as conn:
         try:
@@ -112,11 +115,19 @@ aplicar_migracoes_simples()
 
 app = FastAPI(title="Sistema de Intervenção Farmacêutica", version="1.0.0")
 
+app.include_router(consultorio_router)
+app.include_router(pacientes_router)
+
 allowed_origins = os.getenv("ALLOWED_ORIGINS", "").split(",")
+
+from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in allowed_origins if origin.strip()],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -905,3 +916,6 @@ def relatorio_mensal_pdf(
             "Content-Disposition": f"attachment; filename=relatorio_mensal_{ano}_{mes:02d}.pdf"
         }
     )
+@app.get("/teste-geral")
+def teste_geral():
+    return {"ok": True}
