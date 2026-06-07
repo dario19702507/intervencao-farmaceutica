@@ -14,7 +14,6 @@ from routers.consultorio import (
     classificar_pa,
     classificar_glicemia,
     classificar_pico_fluxo,
-    calcular_bioimpedancia,
     obter_ou_criar_paciente_agenda,
     PacienteSimplificado,
     AtendimentoRapido,
@@ -36,6 +35,139 @@ router = APIRouter(
     tags=["Servicos Rapidos"]
 )
 
+def classificar_imc(imc: float):
+    if imc is None:
+        return None
+    if imc < 18.5:
+        return "baixo_peso"
+    if imc < 25:
+        return "eutrofia"
+    if imc < 30:
+        return "sobrepeso"
+    if imc < 35:
+        return "obesidade_grau_1"
+    if imc < 40:
+        return "obesidade_grau_2"
+    return "obesidade_grau_3"
+
+
+def classificar_gordura_visceral(valor):
+    if valor is None:
+        return None
+    if valor <= 9:
+        return "normal"
+    if valor <= 14:
+        return "elevada"
+    return "muito_elevada"
+
+
+def calcular_bioimpedancia(dados, paciente=None):
+    peso = dados.peso
+    altura = dados.altura
+
+    imc = None
+    classificacao_imc = None
+    massa_gordura_kg = None
+    massa_muscular_kg = None
+    massa_magra_kg = None
+    fmi = None
+    ffmi = None
+    relacao_gordura_musculo = None
+    gasto_energetico_total = None
+    diferenca_idade_corporal = None
+
+    alertas = []
+
+    if peso and altura and altura > 0:
+        altura_m = altura / 100 if altura > 3 else altura
+
+        imc = round(peso / (altura_m ** 2), 2)
+        classificacao_imc = classificar_imc(imc)
+
+        if classificacao_imc in [
+            "obesidade_grau_1",
+            "obesidade_grau_2",
+            "obesidade_grau_3",
+        ]:
+            alertas.append("Obesidade pelo IMC")
+
+        if dados.percentual_gordura is not None:
+            massa_gordura_kg = round(
+                peso * dados.percentual_gordura / 100,
+                2,
+            )
+            massa_magra_kg = round(peso - massa_gordura_kg, 2)
+            fmi = round(massa_gordura_kg / (altura_m ** 2), 2)
+            ffmi = round(massa_magra_kg / (altura_m ** 2), 2)
+
+        if dados.percentual_massa_muscular is not None:
+            massa_muscular_kg = round(
+                peso * dados.percentual_massa_muscular / 100,
+                2,
+            )
+
+        if (
+            massa_gordura_kg is not None
+            and massa_muscular_kg
+            and massa_muscular_kg > 0
+        ):
+            relacao_gordura_musculo = round(
+                massa_gordura_kg / massa_muscular_kg,
+                2,
+            )
+
+    classificacao_gordura_visceral = classificar_gordura_visceral(
+        dados.gordura_visceral
+    )
+
+    if classificacao_gordura_visceral in ["elevada", "muito_elevada"]:
+        alertas.append("Gordura visceral elevada")
+
+    if dados.metabolismo_basal and dados.fator_atividade:
+        gasto_energetico_total = round(
+            dados.metabolismo_basal * dados.fator_atividade,
+            2,
+        )
+
+    if paciente and dados.idade_corporal is not None:
+        idade_cronologica = calcular_idade(paciente.data_nascimento)
+
+        if idade_cronologica is not None:
+            diferenca_idade_corporal = (
+                dados.idade_corporal - idade_cronologica
+            )
+
+            if diferenca_idade_corporal > 0:
+                alertas.append(
+                    "Idade corporal acima da idade cronológica"
+                )
+
+    risco_cardiometabolico = "baixo"
+
+    if (
+        "Gordura visceral elevada" in alertas
+        or "Obesidade pelo IMC" in alertas
+    ):
+        risco_cardiometabolico = "moderado"
+
+    if classificacao_gordura_visceral == "muito_elevada":
+        risco_cardiometabolico = "alto"
+
+    return {
+        "imc": imc,
+        "classificacao_imc": classificacao_imc,
+        "massa_gordura_kg": massa_gordura_kg,
+        "massa_muscular_kg": massa_muscular_kg,
+        "massa_magra_kg": massa_magra_kg,
+        "classificacao_gordura_visceral": classificacao_gordura_visceral,
+        "gasto_energetico_total": gasto_energetico_total,
+        "diferenca_idade_corporal": diferenca_idade_corporal,
+        "fmi": fmi,
+        "ffmi": ffmi,
+        "relacao_gordura_musculo": relacao_gordura_musculo,
+        "risco_cardiometabolico": risco_cardiometabolico,
+        "alertas": "; ".join(alertas) if alertas else None,
+    }
 
 @router.post("/paciente-simplificado")
 def criar_paciente_simplificado(

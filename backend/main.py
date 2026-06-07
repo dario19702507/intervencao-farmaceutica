@@ -18,10 +18,14 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
 from reportlab.pdfgen import canvas
 from routers.consultorio import router as consultorio_router
+from routers.consultorio_clinico import router as consultorio_clinico_router
 from routers.bioimpedancia import router as bioimpedancia_router
 from routers.servicos_rapidos import router as servicos_rapidos_router
 from routers.notificacoes import router as notificacoes_router
 from routers.pacientes import router as pacientes_router
+from routers.farmacoterapia import router as farmacoterapia_router
+from routers.relatorios_cientificos import router as relatorios_cientificos_router
+
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./intervencoes.db")
 SECRET_KEY = os.getenv("SECRET_KEY", "troque-esta-chave-em-producao")
@@ -121,10 +125,13 @@ aplicar_migracoes_simples()
 app = FastAPI(title="Sistema de Intervenção Farmacêutica", version="1.0.0")
 
 app.include_router(consultorio_router)
+app.include_router(consultorio_clinico_router)
 app.include_router(bioimpedancia_router)
 app.include_router(servicos_rapidos_router)
 app.include_router(notificacoes_router)
 app.include_router(pacientes_router)
+app.include_router(farmacoterapia_router)
+app.include_router(relatorios_cientificos_router)
 
 allowed_origins = os.getenv("ALLOWED_ORIGINS", "").split(",")
 
@@ -403,8 +410,8 @@ def criar_intervencao(
         resultado=payload.resultado,
         observacoes=payload.observacoes,
         profissional_id=current.id,
-	created_by=current.id,
-	updated_by=current.id,
+        created_by=current.id,
+        updated_by=current.id,
         supervisor_id=payload.supervisor_id,
     )
     db.add(item); db.commit(); db.refresh(item)
@@ -412,10 +419,10 @@ def criar_intervencao(
 @app.put("/intervencoes/{intervencao_id}", response_model=IntervencaoOut)
 def atualizar_intervencao(
         intervencao_id: int,
-    payload: IntervencaoCreate,
-    db: Session = Depends(get_db),
-    current: User = Depends(get_current_user)
-):
+        payload: IntervencaoCreate,
+        db: Session = Depends(get_db),
+        current: User = Depends(get_current_user)
+    ):
     ensure_not_reader(current)
 
     item = db.query(Intervencao).filter(Intervencao.id == intervencao_id).first()
@@ -596,10 +603,10 @@ def listar_intervencoes_inativadas(
             criado_por=i.criador.nome if i.criador else nome,
             atualizado_por=i.atualizador.nome if i.atualizador else nome,
             supervisor_nome=i.supervisor.nome if i.supervisor else None,
-	    motivo_inativacao=i.motivo_inativacao,
-        )
-        for i, nome, _ in rows
-    ]
+            motivo_inativacao=i.motivo_inativacao,
+            )
+            for i, nome, _ in rows
+        ]
 
 @app.get("/intervencoes", response_model=List[IntervencaoOut])
 def listar_intervencoes(
@@ -639,13 +646,13 @@ def listar_intervencoes(
             observacoes=i.observacoes,
             profissional=nome,
             created_at=i.created_at,
-	    updated_at=i.updated_at,
-	    criado_por=i.criador.nome if i.criador else nome,
-	    atualizado_por=i.atualizador.nome if i.atualizador else nome,
-	    motivo_inativacao=i.motivo_inativacao,
-        )
-        for i, nome, _ in rows
-    ]
+            updated_at=i.updated_at,
+            criado_por=i.criador.nome if i.criador else nome,
+            atualizado_por=i.atualizador.nome if i.atualizador else nome,
+            motivo_inativacao=i.motivo_inativacao,
+            )
+            for i, nome, _ in rows
+        ]
 
 def count_by(db, column, data_inicio=None, data_fim=None, profissional_id=None, categoria_profissional=None):
     q = db.query(column, func.count(Intervencao.id)).join(User, User.id == Intervencao.profissional_id).group_by(column)
