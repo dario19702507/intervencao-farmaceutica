@@ -11,6 +11,7 @@ from routers.consultorio import (
     get_current_user_consultorio,
     registrar_auditoria,
 )
+from routers.utils_horarios import ajustar_para_proximo_horario_atendimento
 
 from pydantic import BaseModel
 from typing import Optional
@@ -113,7 +114,7 @@ def gerar_notificacoes_agenda(db: Session):
                 telefone=evento.telefone,
                 tipo_notificacao=regra["tipo"],
                 mensagem=regra["mensagem"](evento),
-                data_programada=regra["data_programada"],
+                data_programada=ajustar_para_proximo_horario_atendimento(regra["data_programada"]),
                 status="pendente",
                 canal="interno",
             )
@@ -130,6 +131,27 @@ def gerar_notificacoes_agenda(db: Session):
         "notificacoes_ignoradas": ignoradas,
     }
 
+from urllib.parse import quote
+import re
+
+
+def limpar_telefone_whatsapp(telefone: str) -> str:
+    if not telefone:
+        return ""
+
+    numeros = re.sub(r"\D", "", telefone)
+
+    if numeros.startswith("55"):
+        return numeros
+
+    return f"55{numeros}"
+
+
+def gerar_link_whatsapp(telefone: str, mensagem: str) -> str:
+    telefone_limpo = limpar_telefone_whatsapp(telefone)
+    mensagem_codificada = quote(mensagem or "")
+
+    return f"https://wa.me/{telefone_limpo}?text={mensagem_codificada}"
 
 @router.get("")
 def buscar_notificacoes_agenda(
@@ -225,11 +247,29 @@ def listar_notificacoes_agenda(
         NotificacaoAgenda.criado_em.desc(),
     ).all()
 
-    return {
-        "total": len(notificacoes),
-        "notificacoes": notificacoes,
-    }
+    resultado = []
 
+    for n in notificacoes:
+        resultado.append({
+            "id": n.id,
+            "paciente_nome": n.paciente_nome,
+            "telefone": n.telefone,
+            "tipo_notificacao": n.tipo_notificacao,
+            "mensagem": n.mensagem,
+            "data_programada": n.data_programada,
+            "status": n.status,
+            "canal": n.canal,
+
+            "link_whatsapp": gerar_link_whatsapp(
+                n.telefone,
+                n.mensagem
+            )
+        })
+
+    return {
+        "total": len(resultado),
+        "notificacoes": resultado,
+    }
 
 @router.put("/{notificacao_id}/status")
 def atualizar_status_notificacao_agenda(
@@ -292,4 +332,41 @@ def atualizar_status_notificacao_agenda(
     return {
         "mensagem": "Status da notificação atualizado.",
         "notificacao": notificacao,
+    }
+
+@router.put("/{notificacao_id}/marcar-enviada")
+def marcar_notificacao_como_enviada(
+    notificacao_id: int,
+    db: Session = Depends(get_db_consultorio),
+    current = Depends(get_current_user_consultorio)
+):
+    notificacao = db.query(NotificacaoAgenda).filter(
+        NotificacaoAgenda.id == notificacao_id
+    ).first()
+
+    if not notificacao:
+        raise HTTPException(
+            status_code=404,
+            detail="Notificação não encontrada."
+        )
+
+    notificacao.status = "enviada"
+    notificacao.data_envio = datetime.utcnow()
+    notificacao.atualizado_em = datetime.utcnow()
+
+    registrar_auditoria(
+        db=db,
+        current=current,
+        modulo="notificacoes",
+        acao="envio_manual_whatsapp",
+        registro_id=notificacao.id,
+        descricao=f"Notificação marcada como enviada via WhatsApp para {notificacao.paciente_nome}"
+    )
+
+    db.commit()
+    db.refresh(notificacao)
+
+    return {
+        "mensagem": "Notificação marcada como enviada.",
+        "notificacao": notificacao
     }

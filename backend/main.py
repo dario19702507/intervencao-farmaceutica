@@ -25,6 +25,13 @@ from routers.notificacoes import router as notificacoes_router
 from routers.pacientes import router as pacientes_router
 from routers.farmacoterapia import router as farmacoterapia_router
 from routers.relatorios_cientificos import router as relatorios_cientificos_router
+from routers.agenda import router as agenda_router
+from routers.alertas_clinicos import router as alertas_clinicos_router
+from routers.atendimento_rapido import router as atendimento_rapido_router
+from routers.auditoria import router as auditoria_router
+from routers.indicadores_consultorio import router as indicadores_consultorio_router
+from routers.dashboard_notificacoes import router as dashboard_notificacoes_router
+
 
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./intervencoes.db")
@@ -132,6 +139,13 @@ app.include_router(notificacoes_router)
 app.include_router(pacientes_router)
 app.include_router(farmacoterapia_router)
 app.include_router(relatorios_cientificos_router)
+app.include_router(agenda_router)
+app.include_router(alertas_clinicos_router)
+app.include_router(atendimento_rapido_router)
+app.include_router(auditoria_router)
+app.include_router(indicadores_consultorio_router)
+app.include_router(dashboard_notificacoes_router)
+
 
 allowed_origins = os.getenv("ALLOWED_ORIGINS", "").split(",")
 
