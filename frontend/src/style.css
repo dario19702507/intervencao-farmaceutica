@@ -1855,3 +1855,477 @@ button {
   color: #991b1b;
 }
 
+
+/* Passo 14A — Navegação agrupada */
+.sidebar {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.32) transparent;
+}
+
+.sidebar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+}
+
+.sidebar-nav.grouped {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 18px;
+}
+
+.nav-section {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.055);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.nav-section-button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+  transition: background 0.2s ease;
+}
+
+.nav-section-button:hover,
+.nav-section-button.active {
+  background: rgba(255, 255, 255, 0.13);
+}
+
+.nav-section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nav-section-items {
+  display: grid;
+  gap: 4px;
+  padding: 4px 8px 10px;
+}
+
+.nav-item.nested {
+  padding: 10px 12px 10px 18px;
+  border-radius: 12px;
+  font-size: 14px;
+  gap: 10px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.nav-item.nested:hover {
+  transform: translateX(1px);
+}
+
+.nav-item.nested.active {
+  background: rgba(255, 255, 255, 0.24);
+  color: #fff;
+  box-shadow: inset 3px 0 0 rgba(255, 255, 255, 0.8);
+}
+
+/* Navegação definitiva baseada em URL */
+.nav-section-items[hidden] {
+  display: none !important;
+}
+
+.nav-item {
+  text-decoration: none;
+}
+
+.nav-section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.loading-page {
+  display: grid;
+  place-items: center;
+  min-height: 420px;
+}
+
+.loading-card {
+  background: #ffffff;
+  border: 1px solid #dbe7eb;
+  border-radius: 18px;
+  color: #475569;
+  padding: 22px 28px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+}
+
+/* Passo 14D — Fluxo visual do Consultório Farmacêutico */
+.care-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.care-workflow {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 8px;
+  margin: 18px 0;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+}
+
+.care-workflow button {
+  flex: 0 0 auto;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: transparent;
+  color: #475569;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.care-workflow button:hover {
+  background: #eaf3f5;
+  color: #0f5964;
+}
+
+.care-workflow button.active {
+  background: #0f5964;
+  color: #ffffff;
+  box-shadow: 0 8px 20px rgba(15, 89, 100, 0.18);
+}
+
+.care-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.9fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.care-next-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.care-subsection {
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #fbfdfe;
+}
+
+.care-subsection h4 {
+  margin: 0 0 10px;
+  color: #0f172a;
+}
+
+.med-list.compact {
+  gap: 10px;
+}
+
+.med-list.compact .med-card {
+  padding: 12px;
+}
+
+@media (max-width: 1100px) {
+  .care-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .care-overview-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .care-summary-strip {
+    grid-template-columns: 1fr;
+  }
+}
+
+.timeline-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0 1.25rem;
+}
+
+.timeline-summary-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 0.8rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.timeline-summary-card span {
+  font-size: 0.82rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.timeline-summary-card strong {
+  font-size: 1.25rem;
+  color: #0f172a;
+}
+
+.clinical-timeline-item.CEAF .clinical-timeline-marker,
+.clinical-timeline-item.AGENDA .clinical-timeline-marker,
+.clinical-timeline-item.DOCUMENTOS .clinical-timeline-marker,
+.clinical-timeline-item.OCR .clinical-timeline-marker,
+.clinical-timeline-item.CONSULTORIO .clinical-timeline-marker,
+.clinical-timeline-item.FARMACOTERAPIA .clinical-timeline-marker,
+.clinical-timeline-item.PRM .clinical-timeline-marker,
+.clinical-timeline-item.INTERVENCAO .clinical-timeline-marker,
+.clinical-timeline-item.META .clinical-timeline-marker,
+.clinical-timeline-item.PLANO .clinical-timeline-marker,
+.clinical-timeline-item.DESFECHO .clinical-timeline-marker {
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.08);
+}
+
+/* Passo 14E.2C.3A.1 — formulário de metas terapêuticas */
+.inline-form {
+  border: 1px solid #dbe7eb;
+  border-radius: 18px;
+  padding: 16px;
+  background: #f8fafc;
+  margin: 14px 0 18px;
+  display: grid;
+  gap: 14px;
+}
+.form-grid.three {
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+}
+.form-grid.two {
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+}
+.button-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+@media (max-width: 900px) {
+  .form-grid.three,
+  .form-grid.two {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 15A.0 — Identidade institucional */
+.institutional-topbar {
+  align-items: flex-start;
+}
+
+.topbar-brand-block {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.institutional-logos {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.institutional-logos.compact img:first-child {
+  width: 74px;
+  max-height: 54px;
+  object-fit: contain;
+}
+
+.institutional-logos.compact img:last-child {
+  width: 145px;
+  max-height: 54px;
+  object-fit: contain;
+}
+
+.login-logo-stack {
+  display: grid;
+  gap: 14px;
+  justify-items: center;
+  margin-bottom: 18px;
+}
+
+.login-logo-stack img:first-child {
+  width: 170px;
+  max-height: 125px;
+  object-fit: contain;
+}
+
+.login-logo-stack img:last-child {
+  width: 260px;
+  max-width: 100%;
+  max-height: 90px;
+  object-fit: contain;
+}
+
+.print-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.print-action-card {
+  border: 1px solid #dbe7eb;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+@media (max-width: 900px) {
+  .topbar-brand-block {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .institutional-logos.compact img:last-child {
+    width: 120px;
+  }
+}
+
+.print-center-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.print-center-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.print-panel {
+  border: 1px solid #dbe7eb;
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: 0 10px 28px rgba(15, 48, 64, 0.05);
+}
+
+.print-field-full {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 760px;
+  margin-bottom: 14px;
+  font-weight: 600;
+  color: #17323b;
+}
+
+.print-inline-fields {
+  display: grid;
+  grid-template-columns: minmax(220px, 360px) auto;
+  gap: 12px;
+  align-items: end;
+  margin-top: 12px;
+}
+
+.print-inline-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 600;
+  color: #17323b;
+}
+
+.print-action-card strong {
+  color: #17323b;
+}
+
+.print-action-card button {
+  margin-top: auto;
+}
+
+@media (max-width: 760px) {
+  .print-center-header,
+  .print-inline-fields {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+.form-grid.two-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.form-grid label {
+  display: grid;
+  gap: 7px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.button-row,
+.table-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #eefcf8;
+  color: #0f766e;
+  border: 1px solid #cfe5e2;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.alert-card.warning {
+  border-left: 5px solid #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+  padding: 14px 16px;
+}
+
+.alert-card.success {
+  border-left: 5px solid #22c55e;
+  background: #f0fdf4;
+  color: #166534;
+  padding: 14px 16px;
+}
+
+@media (max-width: 760px) {
+  .form-grid.two-columns {
+    grid-template-columns: 1fr;
+  }
+}

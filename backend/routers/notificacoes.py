@@ -153,7 +153,6 @@ def gerar_link_whatsapp(telefone: str, mensagem: str) -> str:
 
     return f"https://wa.me/{telefone_limpo}?text={mensagem_codificada}"
 
-@router.get("")
 def buscar_notificacoes_agenda(
     db: Session = Depends(get_db_consultorio),
     current=Depends(get_current_user_consultorio),
@@ -201,7 +200,6 @@ def buscar_notificacoes_agenda(
     }
 
 
-@router.post("/gerar")
 def executar_geracao_notificacoes_agenda(
     db: Session = Depends(get_db_consultorio),
     current=Depends(get_current_user_consultorio),
@@ -225,7 +223,6 @@ def executar_geracao_notificacoes_agenda(
     return resultado
 
 
-@router.get("/listar")
 def listar_notificacoes_agenda(
     status: Optional[str] = None,
     tipo_notificacao: Optional[str] = None,
@@ -271,7 +268,6 @@ def listar_notificacoes_agenda(
         "notificacoes": resultado,
     }
 
-@router.put("/{notificacao_id}/status")
 def atualizar_status_notificacao_agenda(
     notificacao_id: int,
     dados: NotificacaoAgendaUpdate,

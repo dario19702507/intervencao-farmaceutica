@@ -1,0 +1,120 @@
+.agenda-workspace-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.workspace-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: stretch;
+  padding: 22px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.1), rgba(14, 165, 233, 0.08));
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.workspace-hero h1 {
+  margin: 4px 0 8px;
+  font-size: 1.8rem;
+}
+
+.workspace-hero p {
+  margin: 0;
+  color: #475569;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #2563eb !important;
+}
+
+.workspace-hero-card {
+  min-width: 260px;
+  max-width: 360px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  color: #334155;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+}
+
+.workspace-tabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px;
+  border-radius: 18px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.workspace-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 14px;
+  padding: 11px 14px;
+  cursor: pointer;
+  color: #475569;
+  background: transparent;
+  font-weight: 700;
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.workspace-tab:hover {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.workspace-tab.active {
+  background: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.24);
+}
+
+.workspace-context {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+}
+
+.workspace-context strong {
+  color: #0f172a;
+}
+
+.workspace-context span {
+  color: #64748b;
+}
+
+.workspace-content {
+  min-width: 0;
+}
+
+.workspace-content > * {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .workspace-hero {
+    flex-direction: column;
+  }
+
+  .workspace-hero-card {
+    max-width: none;
+    min-width: 0;
+  }
+}

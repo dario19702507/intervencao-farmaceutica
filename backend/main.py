@@ -1,259 +1,260 @@
 import csv
 import io
 import os
-from dotenv import load_dotenv
-load_dotenv()
-from datetime import datetime, timedelta, date
+from datetime import datetime, date
 from typing import List, Optional
+from types import SimpleNamespace
+from uuid import uuid4
 
-from fastapi import FastAPI, Depends, HTTPException, status, Response
+from fastapi import FastAPI, Depends, HTTPException, Request, status, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordRequestForm
 from jose import JWTError, jwt
-from passlib.context import CryptContext
-from pydantic import BaseModel, Field
-from sqlalchemy import create_engine, Column, Integer, String, Date, DateTime, ForeignKey, Text, Boolean, func
-from sqlalchemy.orm import declarative_base, sessionmaker, Session, relationship
+from sqlalchemy import func
+from sqlalchemy.orm import Session
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
 from reportlab.pdfgen import canvas
 from routers.consultorio import router as consultorio_router
-from routers.consultorio_clinico import router as consultorio_clinico_router
-from routers.bioimpedancia import router as bioimpedancia_router
-from routers.servicos_rapidos import router as servicos_rapidos_router
+from routers.pacientes_consultorio import router as pacientes_consultorio_router
+from routers.conversao_clinica import router as conversao_clinica_router
 from routers.notificacoes import router as notificacoes_router
+from routers.notificacoes_internas import router as notificacoes_internas_router
+from routers.whatsapp import router as whatsapp_router
+from routers.documentos import router as documentos_router
+from routers.processos_documentais import router as processos_documentais_router
+from routers.ocr_documentos import router as ocr_documentos_router
+from routers.migracao_intervencoes import router as migracao_intervencoes_router
+from routers.painel_operacional import router as painel_operacional_router
+from routers.relatorios_gerenciais import router as relatorios_gerenciais_router
+from routers.cuidado_farmaceutico import router as cuidado_farmaceutico_router
+from routers.metas_terapeuticas import router as metas_terapeuticas_router
+from routers.atencao_farmaceutica import router as atencao_farmaceutica_router
+from routers.intervencoes_padronizadas import router as intervencoes_padronizadas_router
+from routers.preenchimento_assistido import router as preenchimento_assistido_router
 from routers.pacientes import router as pacientes_router
-from routers.farmacoterapia import router as farmacoterapia_router
-from routers.relatorios_cientificos import router as relatorios_cientificos_router
 from routers.agenda import router as agenda_router
-from routers.alertas_clinicos import router as alertas_clinicos_router
 from routers.atendimento_rapido import router as atendimento_rapido_router
+from routers.servicos_rapidos import router as servicos_rapidos_router
+from routers.evolucoes_desfechos import router as evolucoes_desfechos_router
+from routers.timeline_consultorio import router as timeline_consultorio_router
+from routers.prontuario_consultorio import router as prontuario_consultorio_router
 from routers.auditoria import router as auditoria_router
 from routers.indicadores_consultorio import router as indicadores_consultorio_router
 from routers.dashboard_notificacoes import router as dashboard_notificacoes_router
-
-
-
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./intervencoes.db")
-SECRET_KEY = os.getenv("SECRET_KEY", "troque-esta-chave-em-producao")
-ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "480"))
-
-connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-engine = create_engine(DATABASE_URL, connect_args=connect_args)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
-
-class User(Base):
-    __tablename__ = "users"
-    id = Column(Integer, primary_key=True, index=True)
-    nome = Column(String, nullable=False)
-    email = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
-    perfil = Column(String, default="farmaceutico")  # admin, farmaceutico, leitor
-    categoria_profissional = Column(String, default="Farmacêutico")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    intervencoes = relationship(
-    "Intervencao",
-    foreign_keys="Intervencao.profissional_id",
-    back_populates="usuario"
+from routers.farmacoterapia import router as farmacoterapia_router
+from routers.indicadores_cientificos import router as indicadores_cientificos_router
+from database import SessionLocal, get_db
+from auth import ALGORITHM, SECRET_KEY, create_access_token, hash_password, oauth2_scheme, verify_password
+from permissions import (
+    exigir_admin as perm_exigir_admin,
+    exigir_pode_escrever,
+    obter_perfil,
+    obter_permissoes_modulos,
+    usuario_eh_leitura_restrita,
+    validar_perfil_usuario,
 )
+from models.core import User, Intervencao
+from models.consultorio_models import AuditoriaSistema
+from schemas.core import (
+    Token, UserOut, PasswordReset, ChangeOwnPassword, InativarPayload,
+    IntervencaoCreate, IntervencaoOut, Indicadores, UserCreate, UserUpdate,
+)
+from migrations import aplicar_migracoes_simples
 
-class Intervencao(Base):
-    __tablename__ = "intervencoes"
-    id = Column(Integer, primary_key=True, index=True)
-    data_atendimento = Column(Date, nullable=False, index=True)
-    paciente_nome = Column(String, nullable=False, index=True)
-    data_nascimento = Column(Date, nullable=True)
-    tipo_atendimento = Column(String, nullable=False)  # Presencial/Remoto
-    motivo_atendimento = Column(String, nullable=False)
-    comorbidade = Column(String, nullable=False)
-    tipos_intervencao = Column(Text, nullable=False)  # separados por ;
-    resultado = Column(String, nullable=False)
-    observacoes = Column(Text, nullable=True)
-    profissional_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    updated_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    supervisor_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    ativo = Column(Boolean, default=True)
-    motivo_inativacao = Column(Text, nullable=True)
-    usuario = relationship("User", foreign_keys=[profissional_id], back_populates="intervencoes")
-    criador = relationship("User", foreign_keys=[created_by])
-    atualizador = relationship("User", foreign_keys=[updated_by])
-    supervisor = relationship("User", foreign_keys=[supervisor_id])
-    Base.metadata.create_all(bind=engine)
-    
-def aplicar_migracoes_simples():
-    with engine.connect() as conn:
-        try:
-            conn.exec_driver_sql(
-                "ALTER TABLE users ADD COLUMN categoria_profissional VARCHAR DEFAULT 'Farmacêutico'"
-            )
-            conn.commit()
-        except Exception:
-            conn.rollback()
-
-        try:
-            conn.exec_driver_sql("ALTER TABLE intervencoes ADD COLUMN created_by INTEGER")
-            conn.commit()
-        except Exception:
-            conn.rollback()
-
-        try:
-            conn.exec_driver_sql("ALTER TABLE intervencoes ADD COLUMN updated_by INTEGER")
-            conn.commit()
-        except Exception:
-            conn.rollback()
-
-        try:
-            conn.exec_driver_sql("ALTER TABLE intervencoes ADD COLUMN ativo BOOLEAN DEFAULT TRUE")
-            conn.commit()
-        except Exception:
-            conn.rollback()
-
-        try:
-            conn.exec_driver_sql("ALTER TABLE intervencoes ADD COLUMN supervisor_id INTEGER")
-            conn.commit()
-        except Exception:
-            conn.rollback()
-
-        try:
-            conn.exec_driver_sql("ALTER TABLE intervencoes ADD COLUMN motivo_inativacao TEXT")
-            conn.commit()
-        except Exception:
-            conn.rollback()
 
 aplicar_migracoes_simples()
 
 app = FastAPI(title="Sistema de Intervenção Farmacêutica", version="1.0.0")
 
-app.include_router(consultorio_router)
-app.include_router(consultorio_clinico_router)
-app.include_router(bioimpedancia_router)
-app.include_router(servicos_rapidos_router)
+app.include_router(conversao_clinica_router)
+app.include_router(pacientes_consultorio_router)
 app.include_router(notificacoes_router)
+app.include_router(notificacoes_internas_router)
+app.include_router(whatsapp_router)
+app.include_router(documentos_router)
+app.include_router(processos_documentais_router)
+app.include_router(ocr_documentos_router)
+app.include_router(migracao_intervencoes_router)
+app.include_router(painel_operacional_router)
+app.include_router(relatorios_gerenciais_router)
+app.include_router(cuidado_farmaceutico_router)
+app.include_router(metas_terapeuticas_router)
+app.include_router(atencao_farmaceutica_router)
+app.include_router(intervencoes_padronizadas_router)
+app.include_router(preenchimento_assistido_router)
 app.include_router(pacientes_router)
-app.include_router(farmacoterapia_router)
-app.include_router(relatorios_cientificos_router)
 app.include_router(agenda_router)
-app.include_router(alertas_clinicos_router)
 app.include_router(atendimento_rapido_router)
+app.include_router(servicos_rapidos_router)
+app.include_router(evolucoes_desfechos_router)
+app.include_router(timeline_consultorio_router)
+app.include_router(prontuario_consultorio_router)
 app.include_router(auditoria_router)
 app.include_router(indicadores_consultorio_router)
 app.include_router(dashboard_notificacoes_router)
+app.include_router(farmacoterapia_router)
+app.include_router(indicadores_cientificos_router)
+app.include_router(consultorio_router)
 
 
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "").split(",")
+def _split_env_list(value: str):
+    return [item.strip() for item in (value or "").split(",") if item.strip()]
 
-from fastapi.middleware.cors import CORSMiddleware
+
+def _cors_origins():
+    """Origens liberadas para o frontend.
+
+    Em produção, configure ALLOWED_ORIGINS no Render com o domínio real do
+    frontend, por exemplo: https://seu-projeto.vercel.app.
+    FRONTEND_ORIGIN foi mantida por compatibilidade com versões anteriores.
+    """
+    origins = _split_env_list(os.getenv("ALLOWED_ORIGINS", ""))
+    legacy_frontend = os.getenv("FRONTEND_ORIGIN", "").strip()
+    if legacy_frontend:
+        origins.append(legacy_frontend)
+
+    defaults = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://0.0.0.0:5173",
+    ]
+    origins.extend(defaults)
+
+    return list(dict.fromkeys(origins))
+
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=_cors_origins(),
+    allow_origin_regex=os.getenv("ALLOWED_ORIGIN_REGEX", r"^http://192\.168\.\d{1,3}\.\d{1,3}:5173$"),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-class Token(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
 
-class UserOut(BaseModel):
-    id: int
-    nome: str
-    email: str
-    perfil: str
-    categoria_profissional: Optional[str] = None
+PUBLIC_PATHS = {
+    "/",
+    "/auth/login",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+    "/opcoes",
+    "/health",
+}
+READ_ONLY_BLOCKED_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+READ_ONLY_ALLOWED_PREFIXES = ("/me",)
+AUDITABLE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
-class PasswordReset(BaseModel):
-    password: str = Field(min_length=6)
 
-class ChangeOwnPassword(BaseModel):
-    senha_atual: str
-    nova_senha: str = Field(min_length=6)
+def _is_public_path(path: str) -> bool:
+    return path in PUBLIC_PATHS or path.startswith("/docs/") or path.startswith("/redoc/")
 
-class InativarPayload(BaseModel):
-    motivo: str = Field(min_length=3)
 
-class UserOut(BaseModel):
-    id: int
-    nome: str
-    email: str
-    perfil: str
-    class Config:
-        from_attributes = True
+def _unauthorized(message: str, status_code: int = 401):
+    return JSONResponse(status_code=status_code, content={"detail": message})
 
-class IntervencaoCreate(BaseModel):
-    data_atendimento: date
-    paciente_nome: str
-    data_nascimento: Optional[date] = None
-    tipo_atendimento: str
-    motivo_atendimento: str
-    comorbidade: str
-    tipos_intervencao: List[str]
-    resultado: str
-    observacoes: Optional[str] = None
-    supervisor_id: Optional[int] = None
 
-class IntervencaoOut(IntervencaoCreate):
-    data_nascimento: Optional[date] = None
-    id: int
-    profissional: str
-    created_at: datetime
-    updated_at: Optional[datetime] = None
-    criado_por: Optional[str] = None
-    atualizado_por: Optional[str] = None
-    supervisor_nome: Optional[str] = None
-    motivo_inativacao: Optional[str] = None
+def _registrar_mutacao_global(user: User, request: Request, status_code: int, request_id: str):
+    """Registro simples de auditoria para ações de escrita no piloto.
 
-class Indicadores(BaseModel):
-    total_intervencoes: int
-    total_pacientes: int
-    por_tipo_atendimento: dict
-    por_motivo: dict
-    por_comorbidade: dict
-    por_resultado: dict
-    por_tipo_intervencao: dict
-    por_mes: dict
-    taxa_aceitacao: float
-    taxa_acompanhamento: float
-    taxa_encaminhamento: float
-    por_profissional: dict
-    por_categoria_profissional: dict
-    tendencia_mensal: dict
-    por_faixa_etaria: dict
+    A auditoria não bloqueia a operação principal. Se a tabela ainda não
+    existir ou se houver falha transitória, o erro é ignorado para não gerar
+    indisponibilidade durante a homologação.
+    """
+    if request.method not in AUDITABLE_METHODS:
+        return
+
+    db = SessionLocal()
+    try:
+        usuario = getattr(user, "nome", None) or getattr(user, "email", None) or "usuario"
+        evento = AuditoriaSistema(
+            usuario=usuario,
+            modulo="http",
+            acao=f"{request.method} {request.url.path}",
+            registro_id=None,
+            descricao=f"status={status_code}; request_id={request_id}",
+            criado_em=datetime.utcnow(),
+        )
+        db.add(evento)
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
+
+@app.middleware("http")
+async def exigir_login_global(request: Request, call_next):
+    """Barreira mínima de pré-homologação multiusuário.
+
+    Garante que endpoints assistenciais, administrativos e documentais não
+    fiquem expostos caso algum router tenha sido criado sem dependência de
+    autenticação. Também impede alteração por perfis de leitura/pesquisa.
+    """
+    request_id = request.headers.get("X-Request-ID") or str(uuid4())
+
+    if request.method == "OPTIONS" or _is_public_path(request.url.path):
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
+    authorization = request.headers.get("Authorization", "")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        response = _unauthorized("Login obrigatório para acessar este recurso")
+        response.headers["X-Request-ID"] = request_id
+        return response
+
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email = payload.get("sub")
+        if not email:
+            response = _unauthorized("Token inválido")
+            response.headers["X-Request-ID"] = request_id
+            return response
+    except JWTError:
+        response = _unauthorized("Token inválido")
+        response.headers["X-Request-ID"] = request_id
+        return response
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            response = _unauthorized("Usuário não encontrado")
+            response.headers["X-Request-ID"] = request_id
+            return response
+
+        if (
+            request.method in READ_ONLY_BLOCKED_METHODS
+            and usuario_eh_leitura_restrita(user)
+            and not request.url.path.startswith(READ_ONLY_ALLOWED_PREFIXES)
+        ):
+            response = _unauthorized("Perfil sem permissão para alterar registros", status_code=403)
+            response.headers["X-Request-ID"] = request_id
+            return response
+
+        user_snapshot = SimpleNamespace(
+            id=user.id,
+            email=user.email,
+            nome=getattr(user, "nome", None),
+            perfil=getattr(user, "perfil", None),
+        )
+    finally:
+        db.close()
+
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    _registrar_mutacao_global(user_snapshot, request, response.status_code, request_id)
+    return response
 
 MOTIVOS = ["Documentação (inclusão/renovação/adequação)", "Dúvidas de paciente"]
 COMORBIDADES = ["Esclerose múltipla", "Esclerose Sistêmica", "Esclerose Lateral Amiotrófica", "Asma/DPOC", "Outro"]
 TIPOS_INTERVENCAO = ["Posologia", "Acondicionamento", "Técnica de uso", "Reação Adversa a Medicamentos (RAM)", "Erro de prescrição", "Orientação documental", "Encaminhamentos", "Educação em Saúde", "Orientação ao profissional da saúde", "Parâmetros clínicos"]
 RESULTADOS = ["Aceitação", "Acompanhamento do paciente", "Outro"]
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-def verify_password(plain, hashed):
-    return pwd_context.verify(plain, hashed)
-
-def hash_password(password):
-    return pwd_context.hash(password)
-
-def create_access_token(data: dict):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     try:
@@ -269,18 +270,28 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 def ensure_admin(user: User):
-    if user.perfil != "admin":
-        raise HTTPException(status_code=403, detail="Acesso restrito ao administrador")
+    perm_exigir_admin(user)
 
 def ensure_not_reader(user: User):
-    if user.perfil == "leitor":
-        raise HTTPException(status_code=403, detail="Perfil sem permissão para alterar registros")
+    exigir_pode_escrever(user)
 
 def ensure_can_edit(user: User, item: Intervencao):
     if user.perfil == "admin":
         return
     if user.categoria_profissional == "Estagiário" and item.profissional_id != user.id:
         raise HTTPException(status_code=403, detail="Estagiário só pode editar os próprios registros")
+
+
+def user_to_out(user: User) -> UserOut:
+    """Serializa usuário único com permissões consolidadas por módulo."""
+    return UserOut(
+        id=user.id,
+        nome=user.nome,
+        email=user.email,
+        perfil=obter_perfil(user),
+        categoria_profissional=user.categoria_profissional,
+        permissoes=obter_permissoes_modulos(user.perfil),
+    )
 def mascarar_nome(nome: str):
     partes = nome.split()
     mascarado = []
@@ -295,10 +306,29 @@ def mascarar_nome(nome: str):
 
 @app.on_event("startup")
 def seed_admin():
+    """Cria usuário inicial somente quando explicitamente habilitado.
+
+    Em produção/homologação, não use senha padrão. Para desenvolvimento local,
+    defina SEED_ADMIN=true no .env. A senha pode ser ajustada por
+    SEED_ADMIN_PASSWORD.
+    """
+    if os.getenv("SEED_ADMIN", "false").lower() not in {"1", "true", "yes", "sim"}:
+        return
+
+    admin_email = os.getenv("SEED_ADMIN_EMAIL", "admin@farmacia.local")
+    admin_password = os.getenv("SEED_ADMIN_PASSWORD", "")
+    if not admin_password:
+        raise RuntimeError("SEED_ADMIN_PASSWORD deve ser configurada quando SEED_ADMIN=true")
+
     db = SessionLocal()
     try:
-        if not db.query(User).filter(User.email == "admin@farmacia.local").first():
-            db.add(User(nome="Administrador", email="admin@farmacia.local", hashed_password=hash_password("admin123"), perfil="admin"))
+        if not db.query(User).filter(User.email == admin_email).first():
+            db.add(User(
+                nome=os.getenv("SEED_ADMIN_NAME", "Administrador"),
+                email=admin_email,
+                hashed_password=hash_password(admin_password),
+                perfil="admin",
+            ))
             db.commit()
     finally:
         db.close()
@@ -310,52 +340,69 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="E-mail ou senha inválidos")
     return {"access_token": create_access_token({"sub": user.email}), "token_type": "bearer"}
 
-class UserCreate(BaseModel):
-    nome: str
-    email: str
-    password: str = Field(min_length=6)
-    perfil: str = "farmaceutico"
-    categoria_profissional: str = "Farmacêutico"
-
-class UserOut(BaseModel):
-    id: int
-    nome: str
-    email: str
-    perfil: str
-    categoria_profissional: Optional[str] = None
-
-    class Config:
-        from_attributes = True
-
 @app.post("/users", response_model=UserOut)
 def create_user(payload: UserCreate, db: Session = Depends(get_db), current: User = Depends(get_current_user)):
     ensure_admin(current)
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(status_code=400, detail="E-mail já cadastrado")
+    perfil_validado = validar_perfil_usuario(payload.perfil)
     user = User(
-    nome=payload.nome,
-    email=payload.email,
-    hashed_password=hash_password(payload.password),
-    perfil=payload.perfil,
-    categoria_profissional=payload.categoria_profissional
-)
+        nome=payload.nome,
+        email=payload.email,
+        hashed_password=hash_password(payload.password),
+        perfil=perfil_validado,
+        categoria_profissional=payload.categoria_profissional
+    )
     db.add(user); db.commit(); db.refresh(user)
-    return user
+    return user_to_out(user)
 
 @app.get("/users", response_model=List[UserOut])
 def list_users(db: Session = Depends(get_db), current: User = Depends(get_current_user)):
     ensure_admin(current)
-    return db.query(User).order_by(User.nome.asc()).all()
+    return [user_to_out(user) for user in db.query(User).order_by(User.nome.asc()).all()]
+
+@app.put("/users/{user_id}", response_model=UserOut)
+def update_user(
+    user_id: int,
+    payload: UserUpdate,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    ensure_admin(current)
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    if payload.email and payload.email != user.email:
+        existente = db.query(User).filter(User.email == payload.email).first()
+        if existente:
+            raise HTTPException(status_code=400, detail="E-mail já cadastrado")
+        user.email = payload.email.strip().lower()
+
+    if payload.nome is not None:
+        user.nome = payload.nome.strip()
+
+    if payload.perfil is not None:
+        user.perfil = validar_perfil_usuario(payload.perfil)
+
+    if payload.categoria_profissional is not None:
+        user.categoria_profissional = payload.categoria_profissional.strip()
+
+    db.commit()
+    db.refresh(user)
+    return user_to_out(user)
 
 @app.get("/profissionais", response_model=List[UserOut])
 def listar_profissionais(db: Session = Depends(get_db), current: User = Depends(get_current_user)):
-    return db.query(User).order_by(User.nome.asc()).all()
+    return [user_to_out(user) for user in db.query(User).order_by(User.nome.asc()).all()]
 
 @app.get("/supervisores", response_model=List[UserOut])
 def listar_supervisores(db: Session = Depends(get_db), current: User = Depends(get_current_user)):
-    return db.query(User).filter(
+    users = db.query(User).filter(
         User.categoria_profissional.in_(["Farmacêutico", "Técnico", "Docente"])
     ).order_by(User.nome.asc()).all()
+    return [user_to_out(user) for user in users]
 
 @app.put("/users/{user_id}/password", response_model=UserOut)
 def reset_user_password(
@@ -374,11 +421,11 @@ def reset_user_password(
     db.commit()
     db.refresh(user)
 
-    return user
+    return user_to_out(user)
 
 @app.get("/me", response_model=UserOut)
 def me(current: User = Depends(get_current_user)):
-    return current
+    return user_to_out(current)
 
 @app.put("/me/password")
 def change_own_password(
@@ -562,14 +609,14 @@ def exportar_intervencoes_csv(
         writer.writerow([
             i.id,
             i.data_atendimento,
-            mascarar_nome(i.paciente_nome) if current.perfil == "leitor" else i.paciente_nome,
-            "" if current.perfil == "leitor" else i.data_nascimento,
+            mascarar_nome(i.paciente_nome) if usuario_eh_leitura_restrita(current) else i.paciente_nome,
+            "" if usuario_eh_leitura_restrita(current) else i.data_nascimento,
             i.tipo_atendimento,
             i.motivo_atendimento,
             i.comorbidade,
             i.tipos_intervencao,
             i.resultado,
-            "" if current.perfil == "leitor" else (i.observacoes or ""),
+            "" if usuario_eh_leitura_restrita(current) else (i.observacoes or ""),
             nome,
             i.created_at
         ])
@@ -602,14 +649,14 @@ def listar_intervencoes_inativadas(
         IntervencaoOut(
             id=i.id,
             data_atendimento=i.data_atendimento,
-            paciente_nome=mascarar_nome(i.paciente_nome) if current.perfil == "leitor" else i.paciente_nome,
-            data_nascimento=None if current.perfil == "leitor" else i.data_nascimento,
+            paciente_nome=mascarar_nome(i.paciente_nome) if usuario_eh_leitura_restrita(current) else i.paciente_nome,
+            data_nascimento=None if usuario_eh_leitura_restrita(current) else i.data_nascimento,
             tipo_atendimento=i.tipo_atendimento,
             motivo_atendimento=i.motivo_atendimento,
             comorbidade=i.comorbidade,
             tipos_intervencao=i.tipos_intervencao.split(";"),
             resultado=i.resultado,
-            observacoes=None if current.perfil == "leitor" else i.observacoes,
+            observacoes=None if usuario_eh_leitura_restrita(current) else i.observacoes,
             supervisor_id=i.supervisor_id,
             profissional=nome,
             created_at=i.created_at,
@@ -651,7 +698,7 @@ def listar_intervencoes(
             id=i.id,
             data_atendimento=i.data_atendimento,
             paciente_nome=i.paciente_nome,
-            data_nascimento=None if current.perfil == "leitor" else i.data_nascimento,
+            data_nascimento=None if usuario_eh_leitura_restrita(current) else i.data_nascimento,
             tipo_atendimento=i.tipo_atendimento,
             motivo_atendimento=i.motivo_atendimento,
             comorbidade=i.comorbidade,

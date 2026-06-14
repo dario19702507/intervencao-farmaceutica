@@ -21,24 +21,13 @@ export default function Login({ onLogin }) {
     formData.append("client_id", "string");
     formData.append("client_secret", "string");
 
-    const response = await fetch("http://127.0.0.1:8000/auth/login", {
-      method: "POST",
+    const response = await api.post("/auth/login", formData, {
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
-        "accept": "application/json",
       },
-      body: formData.toString(),
     });
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error("Erro no login:", data);
-      alert("Erro ao fazer login.");
-      return;
-    }
-
-    const token = data.access_token;
+    const token = response.data.access_token;
 
     if (!token) {
       alert("Token não retornado pelo servidor.");
@@ -65,12 +54,13 @@ export default function Login({ onLogin }) {
     <div className="login-page">
       <div className="login-card">
         <div className="login-brand">
-          <div className="login-icon">
-            <LockKeyhole size={30} />
+          <div className="login-logo-stack">
+            <img src="/logos/farmacia_escola.png" alt="Farmácia Escola UFMS" />
+            <img src="/logos/ufms.png" alt="UFMS" />
           </div>
 
-          <h1>Farmácia Escola</h1>
-          <p>Consultório Farmacêutico e Prontuário Clínico</p>
+          <h1>Sistema Integrado de Atenção Farmacêutica</h1>
+          <p>Farmácia Escola UFMS · Consultório Farmacêutico e Prontuário Clínico</p>
         </div>
 
         <form onSubmit={entrar} className="login-form">
@@ -105,7 +95,7 @@ export default function Login({ onLogin }) {
         </form>
 
         <p className="login-footer">
-          Sistema de cuidado farmacêutico · ambiente de desenvolvimento
+          Farmácia Escola Profa. Ana Maria Cervantes Baraza · UFMS
         </p>
       </div>
     </div>

@@ -1,0 +1,26 @@
+metodo,path,arquivos
+GET,/alertas-pendentes,backend/routers/alertas_clinicos.py | backend/routers/consultorio.py
+GET,/alertas-clinicos-consolidados,backend/routers/alertas_clinicos.py | backend/routers/consultorio.py
+POST,/alertas-clinicos/resolver,backend/routers/alertas_clinicos.py | backend/routers/consultorio.py
+GET,/alertas-clinicos/resolucoes,backend/routers/alertas_clinicos.py | backend/routers/consultorio.py | backend/routers/consultorio.py
+GET,/dashboard-resolucao-alertas,backend/routers/alertas_clinicos.py | backend/routers/consultorio.py
+GET,/relatorio-resolucao-alertas-pdf,backend/routers/alertas_clinicos.py | backend/routers/consultorio.py
+GET,/paciente-simplificado/{paciente_id}/bioimpedancia-historico,backend/routers/bioimpedancia.py | backend/routers/consultorio.py
+GET,/paciente-simplificado/{paciente_id}/bioimpedancia-comparativo,backend/routers/bioimpedancia.py | backend/routers/consultorio.py
+GET,/bioimpedancia/{bioimpedancia_id}/laudo-pdf,backend/routers/bioimpedancia.py | backend/routers/consultorio.py
+GET,/evolucao/{evolucao_id}/desfechos,backend/routers/consultorio.py | backend/routers/consultorio_clinico.py
+POST,/converter-para-clinico/{paciente_simplificado_id},backend/routers/consultorio_clinico.py | backend/routers/conversao_clinica.py
+PUT,/paciente-clinico/{paciente_id}/identificacao,backend/routers/consultorio_clinico.py | backend/routers/conversao_clinica.py
+PUT,/paciente-clinico/{paciente_id}/dados-clinicos,backend/routers/consultorio_clinico.py | backend/routers/conversao_clinica.py
+POST,/prontuario/{prontuario_id}/evolucao,backend/routers/consultorio_clinico.py | backend/routers/evolucoes_desfechos.py
+GET,/prontuario/{prontuario_id}/evolucoes,backend/routers/consultorio_clinico.py | backend/routers/evolucoes_desfechos.py
+POST,/evolucao/{evolucao_id}/desfecho,backend/routers/consultorio_clinico.py | backend/routers/evolucoes_desfechos.py
+GET,/painel-operacional,backend/routers/dashboard_notificacoes.py | backend/routers/painel_operacional.py
+GET,/indicadores-cientificos,backend/routers/indicadores_cientificos.py | backend/routers/relatorios_cientificos.py
+GET,/serie-temporal-cientifica,backend/routers/indicadores_cientificos.py | backend/routers/relatorios_cientificos.py
+GET,/exportacao-cientifica-excel,backend/routers/indicadores_cientificos.py | backend/routers/relatorios_cientificos.py
+GET,/exportacao-pesquisa-anonimizada,backend/routers/indicadores_cientificos.py | backend/routers/relatorios_cientificos.py
+GET,/relatorio-cientifico-pdf,backend/routers/indicadores_cientificos.py | backend/routers/relatorios_cientificos.py
+GET,/opcoes,backend/routers/migracao_intervencoes.py | backend/routers/relatorios_gerenciais.py | backend/routers/intervencoes_padronizadas.py
+GET,/dashboard,backend/routers/migracao_intervencoes.py | backend/routers/intervencoes_padronizadas.py
+POST,/preparar-estrutura,backend/routers/migracao_intervencoes.py | backend/routers/intervencoes_padronizadas.py

@@ -1,6 +1,5 @@
 from datetime import date
 
-
 ORDEM_PRIORIDADE = {
     "CRITICO": 1,
     "ALTO": 2,
@@ -76,3 +75,30 @@ def prioridade_visual(prioridade: str):
 
 def peso_prioridade(prioridade: str):
     return ORDEM_PRIORIDADE.get(prioridade, 99)
+
+def definir_prioridade(riscos: list[str]) -> str:
+    texto = " ".join(riscos).lower()
+
+    if "vermelha" in texto or "muito alto" in texto:
+        return "muito_alta"
+
+    if len(riscos) >= 3:
+        return "alta"
+
+    if len(riscos) == 2:
+        return "moderada"
+
+    return "baixa"
+
+
+def gerar_sugestao_conduta(prioridade: str) -> str:
+    if prioridade == "muito_alta":
+        return "Priorizar avaliação farmacêutica imediata e considerar encaminhamento."
+
+    if prioridade == "alta":
+        return "Agendar acompanhamento farmacêutico prioritário."
+
+    if prioridade == "moderada":
+        return "Orientar paciente e programar reavaliação."
+
+    return "Manter acompanhamento conforme rotina do serviço."

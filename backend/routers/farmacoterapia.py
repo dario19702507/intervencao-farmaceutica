@@ -1,20 +1,36 @@
-from datetime import datetime
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime, time
 from sqlalchemy.orm import Session
 
+from database import engine
+
+from models.consultorio_models import (
+    BaseConsultorio,
+    PacienteClinico,
+    MedicamentoUso,
+    CatalogoMedicamento,
+    IntervencaoFarmacoterapia,
+    DesfechoIntervencaoFarmacoterapia,
+    UserConsultorio,
+)
+from schemas.consultorio_schemas import (
+    MedicamentoUsoCreate,
+    MedicamentoTrocaCreate,
+    MedicamentoSuspensaoCreate,
+    MedicamentoEncerramentoCreate,
+    IntervencaoFarmacoterapiaCreate,
+    DesfechoIntervencaoFarmacoterapiaCreate,
+)
+from services.farmacoterapia import (
+    montar_avaliacao_polifarmacia,
+    montar_evolucao_farmacoterapeutica,
+    montar_sugestoes_plano_cuidado,
+    montar_dashboard_farmacoterapeutico,
+)
 from routers.consultorio import (
     get_db_consultorio,
     get_current_user_consultorio,
-    PacienteClinico,
-    MedicamentoUso,
-    IntervencaoFarmacoterapia,
-    DesfechoIntervencaoFarmacoterapia,
-    MedicamentoUsoCreate,
-    IntervencaoFarmacoterapiaCreate,
-    DesfechoIntervencaoFarmacoterapiaCreate,
-    registrar_auditoria,
+    exigir_farmaceutico_ou_admin,
 )
 
 router = APIRouter(
@@ -22,275 +38,171 @@ router = APIRouter(
     tags=["Farmacoterapia"]
 )
 
+BaseConsultorio.metadata.create_all(bind=engine)
+
+
+def _adicionar_coluna_farmacoterapia_se_nao_existir(tabela: str, definicao_coluna: str) -> None:
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql(f"ALTER TABLE {tabela} ADD COLUMN {definicao_coluna}")
+            conn.commit()
+    except Exception:
+        pass
+
+
+# Garante compatibilidade com bancos já existentes antes do passo 14E.2B.
+_adicionar_coluna_farmacoterapia_se_nao_existir("medicamentos_uso", "catalogo_medicamento_id INTEGER")
+_adicionar_coluna_farmacoterapia_se_nao_existir("medicamentos_uso", "frequencia_uso VARCHAR")
+_adicionar_coluna_farmacoterapia_se_nao_existir("medicamentos_uso", "horarios_uso TEXT")
+_adicionar_coluna_farmacoterapia_se_nao_existir("medicamentos_uso", "uso_se_necessario BOOLEAN DEFAULT FALSE")
+_adicionar_coluna_farmacoterapia_se_nao_existir("medicamentos_uso", "status_farmacoterapia VARCHAR DEFAULT 'EM_USO'")
+_adicionar_coluna_farmacoterapia_se_nao_existir("medicamentos_uso", "data_status DATETIME")
+_adicionar_coluna_farmacoterapia_se_nao_existir("medicamentos_uso", "motivo_status VARCHAR")
+_adicionar_coluna_farmacoterapia_se_nao_existir("medicamentos_uso", "tipo_suspensao VARCHAR")
+_adicionar_coluna_farmacoterapia_se_nao_existir("medicamentos_uso", "observacao_status TEXT")
+_adicionar_coluna_farmacoterapia_se_nao_existir("medicamentos_uso", "substituido_por_medicamento_id INTEGER")
+_adicionar_coluna_farmacoterapia_se_nao_existir("medicamentos_uso", "prm_relacionado_id INTEGER")
+_adicionar_coluna_farmacoterapia_se_nao_existir("medicamentos_uso", "intervencao_relacionada_id INTEGER")
+_adicionar_coluna_farmacoterapia_se_nao_existir("catalogo_medicamentos", "principio_ativo VARCHAR")
+_adicionar_coluna_farmacoterapia_se_nao_existir("catalogo_medicamentos", "nome_comercial VARCHAR")
+_adicionar_coluna_farmacoterapia_se_nao_existir("catalogo_medicamentos", "laboratorio VARCHAR")
+_adicionar_coluna_farmacoterapia_se_nao_existir("catalogo_medicamentos", "registro_anvisa VARCHAR")
+_adicionar_coluna_farmacoterapia_se_nao_existir("catalogo_medicamentos", "classe_terapeutica VARCHAR")
+
+VIAS_ADMINISTRACAO = [
+    "oral", "sublingual", "inalatória", "nasal", "oftálmica", "otológica",
+    "tópica", "transdérmica", "subcutânea", "intramuscular", "intravenosa",
+    "retal", "vaginal"
+]
+
+HORARIOS_PADRAO = [
+    "06:00", "07:00", "08:00", "12:00", "14:00", "18:00", "20:00", "22:00",
+    "ao acordar", "antes de dormir", "antes das refeições", "após refeições", "se necessário"
+]
+
+FREQUENCIAS_USO = [
+    "1x ao dia", "2x ao dia", "3x ao dia", "4x ao dia", "a cada 6 horas",
+    "a cada 8 horas", "a cada 12 horas", "semanal", "quinzenal", "mensal",
+    "antes das refeições", "após refeições", "se necessário"
+]
+
+
+STATUS_FARMACOTERAPIA = ["EM_USO", "TROCADO", "SUSPENSO", "ENCERRADO"]
+MOTIVOS_TROCA = [
+    "INEFETIVIDADE", "REACAO_ADVERSA", "INTERACAO_MEDICAMENTOSA",
+    "DESABASTECIMENTO", "AJUSTE_TERAPEUTICO", "SIMPLIFICACAO_ESQUEMA", "OUTRO"
+]
+MOTIVOS_SUSPENSAO = [
+    "EVENTO_ADVERSO", "CONTRAINDICACAO", "FIM_DO_TRATAMENTO",
+    "NAO_ADESAO", "DECISAO_MEDICA", "DECISAO_PACIENTE", "OUTRO"
+]
+MOTIVOS_ENCERRAMENTO = [
+    "FIM_DO_TRATAMENTO", "TRATAMENTO_CONCLUIDO", "CURSO_CURTO_FINALIZADO", "OUTRO"
+]
+TIPOS_SUSPENSAO = ["TEMPORARIA", "DEFINITIVA"]
+
+
+def _data_para_datetime(valor):
+    if not valor:
+        return datetime.utcnow()
+    return datetime.combine(valor, time.min)
+
+
+def _descricao_catalogo(medicamento: CatalogoMedicamento) -> str:
+    partes = [
+        medicamento.nome_comercial,
+        medicamento.principio_ativo or medicamento.farmaco,
+        medicamento.concentracao,
+        medicamento.apresentacao,
+        medicamento.forma_farmaceutica,
+    ]
+    return " - ".join([str(p) for p in partes if p])
+
+
+def _normalizar_payload_medicamento(dados: MedicamentoUsoCreate, db: Session) -> dict:
+    payload = dados.model_dump()
+    nome = (payload.get("nome_medicamento") or "").strip()
+    catalogo_id = payload.get("catalogo_medicamento_id")
+
+    if catalogo_id:
+        item = db.query(CatalogoMedicamento).filter(
+            CatalogoMedicamento.id == catalogo_id,
+            CatalogoMedicamento.ativo == True,
+        ).first()
+        if not item:
+            raise HTTPException(status_code=404, detail="Medicamento do catálogo não encontrado")
+        if not nome:
+            nome = _descricao_catalogo(item) or item.farmaco
+
+    if not nome:
+        raise HTTPException(status_code=400, detail="Informe o medicamento ou selecione um item do catálogo")
+
+    payload["nome_medicamento"] = nome
+
+    if payload.get("frequencia_uso") and not payload.get("frequencia"):
+        payload["frequencia"] = payload["frequencia_uso"]
+
+    if payload.get("uso_se_necessario") and not payload.get("frequencia_uso"):
+        payload["frequencia_uso"] = "se necessário"
+        payload["frequencia"] = payload.get("frequencia") or "se necessário"
+
+    return payload
+
+
+
+@router.get("/farmacoterapia/opcoes")
+def opcoes_farmacoterapia(current=Depends(get_current_user_consultorio)):
+    return {
+        "vias_administracao": VIAS_ADMINISTRACAO,
+        "horarios_padrao": HORARIOS_PADRAO,
+        "frequencias_uso": FREQUENCIAS_USO,
+        "adesao_referida": ["boa", "regular", "ruim", "nao_avaliada"],
+        "orientacao_catalogo": "Use catalogo_medicamento_id quando houver correspondência; mantenha nome_medicamento para registro manual quando necessário.",
+        "status_farmacoterapia": STATUS_FARMACOTERAPIA,
+        "motivos_troca": MOTIVOS_TROCA,
+        "motivos_suspensao": MOTIVOS_SUSPENSAO,
+        "motivos_encerramento": MOTIVOS_ENCERRAMENTO,
+        "tipos_suspensao": TIPOS_SUSPENSAO,
+    }
+
 @router.get("/paciente-clinico/{paciente_id}/evolucao-farmacoterapeutica")
 def evolucao_farmacoterapeutica(
     paciente_id: int,
     db: Session = Depends(get_db_consultorio),
     current=Depends(get_current_user_consultorio)
 ):
-    paciente = db.query(PacienteClinico).filter(
-        PacienteClinico.id == paciente_id
-    ).first()
-
-    if not paciente:
-        raise HTTPException(
-            status_code=404,
-            detail="Paciente clínico não encontrado"
-        )
-
-    medicamentos = db.query(MedicamentoUso).filter(
-        MedicamentoUso.paciente_clinico_id == paciente.id
-    ).order_by(
-        MedicamentoUso.criado_em.asc()
-    ).all()
-
-    intervencoes = db.query(IntervencaoFarmacoterapia).filter(
-        IntervencaoFarmacoterapia.paciente_clinico_id == paciente.id
-    ).order_by(
-        IntervencaoFarmacoterapia.criado_em.asc()
-    ).all()
-
-    eventos = []
-
-    for m in medicamentos:
-        eventos.append({
-            "data": m.criado_em,
-            "tipo": "medicamento",
-            "titulo": m.nome_medicamento,
-            "descricao": f"{m.dose or ''} {m.via or ''} {m.frequencia or ''}",
-            "adesao": m.adesao_referida,
-            "ativo": m.ativo,
-        })
-
-    for i in intervencoes:
-        eventos.append({
-            "data": i.criado_em,
-            "tipo": "intervencao",
-            "titulo": i.tipo_intervencao,
-            "descricao": i.descricao or i.conduta,
-            "aceita": i.aceita_pelo_paciente,
-            "encaminhamento": i.necessidade_encaminhamento,
-        })
-
-        desfechos = db.query(DesfechoIntervencaoFarmacoterapia).filter(
-            DesfechoIntervencaoFarmacoterapia.intervencao_id == i.id
-        ).order_by(
-            DesfechoIntervencaoFarmacoterapia.criado_em.asc()
-        ).all()
-
-        for d in desfechos:
-            eventos.append({
-                "data": d.criado_em,
-                "tipo": "desfecho_intervencao",
-                "titulo": d.status_desfecho,
-                "descricao": d.resultado_observado or d.observacoes,
-                "nova_intervencao": d.necessidade_nova_intervencao,
-            })
-
-    eventos = sorted(
-        eventos,
-        key=lambda x: x.get("data") or datetime.min
+    return montar_evolucao_farmacoterapeutica(
+        paciente_id=paciente_id,
+        db=db
     )
 
-    total_medicamentos = len([
-        m for m in medicamentos
-        if m.ativo
-    ])
 
-    total_intervencoes = len(intervencoes)
-
-    intervencoes_aceitas = len([
-        i for i in intervencoes
-        if i.aceita_pelo_paciente
-    ])
-
-    encaminhamentos = len([
-        i for i in intervencoes
-        if i.necessidade_encaminhamento
-    ])
-
-    adesoes = [
-        (m.adesao_referida or "").lower()
-        for m in medicamentos
-        if m.adesao_referida
-    ]
-
-    baixa_adesao = sum(
-        1 for a in adesoes
-        if a in ["baixa", "ruim", "irregular"]
+@router.get("/paciente-clinico/{paciente_id}/sugestoes-plano-cuidado")
+def sugestoes_plano_cuidado(
+    paciente_id: int,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    return montar_sugestoes_plano_cuidado(
+        paciente_id=paciente_id,
+        db=db
     )
 
-    boa_adesao = sum(
-        1 for a in adesoes
-        if a in ["boa", "regular", "adequada"]
-    )
-
-    avaliacao_atual = avaliar_polifarmacia(
-        paciente_id=paciente.id,
-        db=db,
-        current=current
-    )
-
-    tendencia = "estável"
-
-    if total_medicamentos >= 8:
-        tendencia = "maior_complexidade"
-
-    elif total_medicamentos >= 5:
-        tendencia = "polifarmacia"
-
-    if baixa_adesao > 0:
-        tendencia = "risco_por_adesao"
-
-    if total_intervencoes > 0 and intervencoes_aceitas >= total_intervencoes:
-        tendencia = "resposta_favoravel"
-
-    interpretacao = (
-        f"Paciente em uso de {total_medicamentos} medicamento(s) ativo(s), "
-        f"com {total_intervencoes} intervenção(ões) farmacoterapêutica(s) registrada(s). "
-        f"Tendência farmacoterapêutica atual: {tendencia}."
-    )
-
-    return {
-        "paciente_id": paciente.id,
-        "paciente": paciente.nome,
-
-        "total_medicamentos_ativos": total_medicamentos,
-        "total_intervencoes": total_intervencoes,
-        "intervencoes_aceitas": intervencoes_aceitas,
-        "encaminhamentos": encaminhamentos,
-
-        "baixa_adesao": baixa_adesao,
-        "boa_adesao": boa_adesao,
-
-        "risco_farmacoterapeutico_atual":
-            avaliacao_atual.get("risco"),
-
-        "score_farmacoterapeutico_atual":
-            avaliacao_atual.get("score"),
-
-        "polifarmacia":
-            avaliacao_atual.get("polifarmacia"),
-
-        "tendencia": tendencia,
-        "interpretacao": interpretacao,
-
-        "eventos": eventos,
-    }
 
 @router.get("/dashboard-farmacoterapeutico")
 def dashboard_farmacoterapeutico(
     db: Session = Depends(get_db_consultorio),
     current=Depends(get_current_user_consultorio)
 ):
-    pacientes = db.query(PacienteClinico).all()
+    return montar_dashboard_farmacoterapeutico(db=db)
 
-    total_pacientes = len(pacientes)
-    total_medicamentos_ativos = 0
-    pacientes_polifarmacia = 0
-
-    risco = {
-        "baixo": 0,
-        "moderado": 0,
-        "alto": 0,
-    }
-
-    tendencias = {}
-    baixa_adesao = 0
-    boa_adesao = 0
-    total_intervencoes = 0
-    intervencoes_aceitas = 0
-    encaminhamentos = 0
-
-    for paciente in pacientes:
-        avaliacao = avaliar_polifarmacia(
-            paciente_id=paciente.id,
-            db=db,
-            current=current
-        )
-
-        evolucao = evolucao_farmacoterapeutica(
-            paciente_id=paciente.id,
-            db=db,
-            current=current
-        )
-
-        total_medicamentos_ativos += avaliacao.get(
-            "total_medicamentos",
-            0
-        )
-
-        if avaliacao.get("polifarmacia"):
-            pacientes_polifarmacia += 1
-
-        risco_atual = avaliacao.get("risco") or "baixo"
-        risco[risco_atual] = risco.get(risco_atual, 0) + 1
-
-        tendencia = evolucao.get("tendencia") or "estável"
-        tendencias[tendencia] = tendencias.get(tendencia, 0) + 1
-
-        baixa_adesao += evolucao.get("baixa_adesao", 0)
-        boa_adesao += evolucao.get("boa_adesao", 0)
-
-        total_intervencoes += evolucao.get("total_intervencoes", 0)
-        intervencoes_aceitas += evolucao.get("intervencoes_aceitas", 0)
-        encaminhamentos += evolucao.get("encaminhamentos", 0)
-
-    media_medicamentos = (
-        round(total_medicamentos_ativos / total_pacientes, 2)
-        if total_pacientes > 0
-        else 0
-    )
-
-    taxa_polifarmacia = (
-        round((pacientes_polifarmacia / total_pacientes) * 100, 2)
-        if total_pacientes > 0
-        else 0
-    )
-
-    taxa_aceitacao = (
-        round((intervencoes_aceitas / total_intervencoes) * 100, 2)
-        if total_intervencoes > 0
-        else 0
-    )
-
-    taxa_encaminhamento = (
-        round((encaminhamentos / total_intervencoes) * 100, 2)
-        if total_intervencoes > 0
-        else 0
-    )
-
-    return {
-        "total_pacientes": total_pacientes,
-        "total_medicamentos_ativos": total_medicamentos_ativos,
-        "media_medicamentos_por_paciente": media_medicamentos,
-
-        "pacientes_polifarmacia": pacientes_polifarmacia,
-        "taxa_polifarmacia": taxa_polifarmacia,
-
-        "risco_farmacoterapeutico": risco,
-        "tendencias": tendencias,
-
-        "adesao": {
-            "baixa_adesao": baixa_adesao,
-            "boa_adesao": boa_adesao,
-        },
-
-        "intervencoes": {
-            "total": total_intervencoes,
-            "aceitas": intervencoes_aceitas,
-            "encaminhamentos": encaminhamentos,
-            "taxa_aceitacao": taxa_aceitacao,
-            "taxa_encaminhamento": taxa_encaminhamento,
-        }
-    }
 
 @router.post("/paciente-clinico/{paciente_id}/medicamento")
 def adicionar_medicamento_uso(
     paciente_id: int,
     dados: MedicamentoUsoCreate,
     db: Session = Depends(get_db_consultorio),
-    current = Depends(get_current_user_consultorio)
+    current: UserConsultorio = Depends(get_current_user_consultorio)
 ):
     exigir_farmaceutico_ou_admin(current)
 
@@ -301,8 +213,212 @@ def adicionar_medicamento_uso(
     if not paciente:
         raise HTTPException(status_code=404, detail="Paciente clínico não encontrado")
 
+    payload = _normalizar_payload_medicamento(dados, db)
+
     novo = MedicamentoUso(
         paciente_clinico_id=paciente_id,
+        **payload
+    )
+
+    db.add(novo)
+    db.commit()
+    db.refresh(novo)
+
+    return novo
+
+
+@router.get("/paciente-clinico/{paciente_id}/medicamentos")
+def listar_medicamentos_uso(
+    paciente_id: int,
+    db: Session = Depends(get_db_consultorio)
+):
+    medicamentos = db.query(MedicamentoUso).filter(
+        MedicamentoUso.paciente_clinico_id == paciente_id,
+        MedicamentoUso.ativo == True
+    ).order_by(MedicamentoUso.criado_em.desc()).all()
+
+
+    return medicamentos
+
+
+@router.post("/medicamentos/{medicamento_id}/trocar")
+def trocar_medicamento_uso(
+    medicamento_id: int,
+    dados: MedicamentoTrocaCreate,
+    db: Session = Depends(get_db_consultorio),
+    current: UserConsultorio = Depends(get_current_user_consultorio)
+):
+    exigir_farmaceutico_ou_admin(current)
+
+    medicamento = db.query(MedicamentoUso).filter(MedicamentoUso.id == medicamento_id).first()
+    if not medicamento:
+        raise HTTPException(status_code=404, detail="Medicamento não encontrado")
+
+    payload_novo = _normalizar_payload_medicamento(dados.novo_medicamento, db)
+    novo = MedicamentoUso(
+        paciente_clinico_id=medicamento.paciente_clinico_id,
+        **payload_novo,
+    )
+    novo.status_farmacoterapia = "EM_USO"
+
+    db.add(novo)
+    db.flush()
+
+    medicamento.status_farmacoterapia = "TROCADO"
+    medicamento.data_status = _data_para_datetime(dados.data_troca)
+    medicamento.motivo_status = dados.motivo_troca
+    medicamento.observacao_status = dados.observacao
+    medicamento.substituido_por_medicamento_id = novo.id
+    medicamento.prm_relacionado_id = dados.prm_relacionado_id
+    medicamento.intervencao_relacionada_id = dados.intervencao_relacionada_id
+
+    db.commit()
+    db.refresh(medicamento)
+    db.refresh(novo)
+
+    return {
+        "mensagem": "Troca de medicamento registrada com sucesso.",
+        "medicamento_anterior": medicamento,
+        "medicamento_novo": novo,
+    }
+
+
+@router.post("/medicamentos/{medicamento_id}/suspender")
+def suspender_medicamento_uso(
+    medicamento_id: int,
+    dados: MedicamentoSuspensaoCreate,
+    db: Session = Depends(get_db_consultorio),
+    current: UserConsultorio = Depends(get_current_user_consultorio)
+):
+    exigir_farmaceutico_ou_admin(current)
+
+    medicamento = db.query(MedicamentoUso).filter(MedicamentoUso.id == medicamento_id).first()
+    if not medicamento:
+        raise HTTPException(status_code=404, detail="Medicamento não encontrado")
+
+    medicamento.status_farmacoterapia = "SUSPENSO"
+    medicamento.data_status = _data_para_datetime(dados.data_suspensao)
+    medicamento.motivo_status = dados.motivo_suspensao
+    medicamento.tipo_suspensao = dados.tipo_suspensao
+    medicamento.observacao_status = dados.observacao
+    medicamento.prm_relacionado_id = dados.prm_relacionado_id
+    medicamento.intervencao_relacionada_id = dados.intervencao_relacionada_id
+
+    db.commit()
+    db.refresh(medicamento)
+
+    return {"mensagem": "Suspensão de medicamento registrada com sucesso.", "medicamento": medicamento}
+
+
+@router.post("/medicamentos/{medicamento_id}/encerrar")
+def encerrar_medicamento_uso(
+    medicamento_id: int,
+    dados: MedicamentoEncerramentoCreate,
+    db: Session = Depends(get_db_consultorio),
+    current: UserConsultorio = Depends(get_current_user_consultorio)
+):
+    exigir_farmaceutico_ou_admin(current)
+
+    medicamento = db.query(MedicamentoUso).filter(MedicamentoUso.id == medicamento_id).first()
+    if not medicamento:
+        raise HTTPException(status_code=404, detail="Medicamento não encontrado")
+
+    medicamento.status_farmacoterapia = "ENCERRADO"
+    medicamento.data_status = _data_para_datetime(dados.data_encerramento)
+    medicamento.motivo_status = dados.motivo_encerramento
+    medicamento.observacao_status = dados.observacao
+    medicamento.prm_relacionado_id = dados.prm_relacionado_id
+    medicamento.intervencao_relacionada_id = dados.intervencao_relacionada_id
+
+    db.commit()
+    db.refresh(medicamento)
+
+    return {"mensagem": "Encerramento de medicamento registrado com sucesso.", "medicamento": medicamento}
+
+
+@router.get("/paciente-clinico/{paciente_id}/avaliacao-polifarmacia")
+def avaliar_polifarmacia(
+    paciente_id: int,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    return montar_avaliacao_polifarmacia(
+        paciente_id=paciente_id,
+        db=db
+    )
+
+
+@router.post("/paciente-clinico/{paciente_id}/intervencao-farmacoterapia")
+def adicionar_intervencao_farmacoterapia(
+    paciente_id: int,
+    dados: IntervencaoFarmacoterapiaCreate,
+    db: Session = Depends(get_db_consultorio),
+    current: UserConsultorio = Depends(get_current_user_consultorio)
+):
+    exigir_farmaceutico_ou_admin(current)
+
+    paciente = db.query(PacienteClinico).filter(
+        PacienteClinico.id == paciente_id
+    ).first()
+
+    if not paciente:
+        raise HTTPException(status_code=404, detail="Paciente clínico não encontrado")
+
+    if dados.medicamento_uso_id:
+        medicamento = db.query(MedicamentoUso).filter(
+            MedicamentoUso.id == dados.medicamento_uso_id,
+            MedicamentoUso.paciente_clinico_id == paciente_id
+        ).first()
+
+        if not medicamento:
+            raise HTTPException(
+                status_code=404,
+                detail="Medicamento não encontrado para este paciente."
+            )
+
+    nova = IntervencaoFarmacoterapia(
+        paciente_clinico_id=paciente_id,
+        **dados.model_dump()
+    )
+
+    db.add(nova)
+    db.commit()
+    db.refresh(nova)
+
+    return nova
+
+
+@router.get("/paciente-clinico/{paciente_id}/intervencoes-farmacoterapia")
+def listar_intervencoes_farmacoterapia(
+    paciente_id: int,
+    db: Session = Depends(get_db_consultorio),
+    current: UserConsultorio = Depends(get_current_user_consultorio)
+):
+    intervencoes = db.query(IntervencaoFarmacoterapia).filter(
+        IntervencaoFarmacoterapia.paciente_clinico_id == paciente_id
+    ).order_by(IntervencaoFarmacoterapia.criado_em.desc()).all()
+
+    return intervencoes
+
+
+@router.post("/intervencao-farmacoterapia/{intervencao_id}/desfecho")
+def adicionar_desfecho_intervencao_farmacoterapia(
+    intervencao_id: int,
+    dados: DesfechoIntervencaoFarmacoterapiaCreate,
+    db: Session = Depends(get_db_consultorio),
+    current: UserConsultorio = Depends(get_current_user_consultorio)
+):
+    exigir_farmaceutico_ou_admin(current)
+
+    intervencao = db.query(IntervencaoFarmacoterapia).filter(
+        IntervencaoFarmacoterapia.id == intervencao_id
+    ).first()
+
+    if not intervencao:
+        raise HTTPException(status_code=404, detail="Intervenção não encontrada")
+
+    novo = DesfechoIntervencaoFarmacoterapia(
+        intervencao_id=intervencao_id,
         **dados.model_dump()
     )
 
@@ -312,196 +428,15 @@ def adicionar_medicamento_uso(
 
     return novo
 
-@router.get("/paciente-clinico/{paciente_id}/avaliacao-polifarmacia")
-def avaliar_polifarmacia(
-    paciente_id: int,
-    db: Session = Depends(get_db_consultorio),
-    current=Depends(get_current_user_consultorio)
-):
-    paciente = db.query(PacienteClinico).filter(
-        PacienteClinico.id == paciente_id
-    ).first()
-
-    if not paciente:
-        raise HTTPException(
-            status_code=404,
-            detail="Paciente clínico não encontrado"
-        )
-
-    medicamentos = db.query(MedicamentoUso).filter(
-        MedicamentoUso.paciente_clinico_id == paciente.id,
-        MedicamentoUso.ativo == True
-    ).all()
-
-    total_medicamentos = len(medicamentos)
-
-    polifarmacia = total_medicamentos >= 5
-
-    lista_medicamentos = []
-
-    for m in medicamentos:
-        lista_medicamentos.append({
-            "id": m.id,
-            "medicamento": m.nome_medicamento,
-            "dose": m.dose,
-            "via": m.via,
-            "frequencia": m.frequencia,
-            "indicacao": m.indicacao,
-            "adesao": m.adesao_referida,
-        })
-
-    risco = "baixo"
-    score = 0
-    alertas = []
-    recomendacoes = []
-
-    if total_medicamentos >= 5:
-        risco = "moderado"
-        score += 2
-
-        alertas.append(
-            "Paciente em polifarmácia (≥5 medicamentos)."
-        )
-
-        recomendacoes.append(
-            "Realizar revisão farmacoterapêutica periódica."
-        )
-
-    if total_medicamentos >= 8:
-        risco = "alto"
-        score += 2
-
-        alertas.append(
-            "Elevado número de medicamentos em uso."
-        )
-
-    nomes = [
-        (m.nome_medicamento or "").lower()
-        for m in medicamentos
-    ]
-
-    duplicidades = []
-
-    for nome in nomes:
-        if nomes.count(nome) > 1 and nome not in duplicidades:
-            duplicidades.append(nome)
-
-    if duplicidades:
-        risco = "alto"
-        score += 2
-
-        alertas.append(
-            f"Possível duplicidade terapêutica: {', '.join(duplicidades)}"
-        )
-
-        recomendacoes.append(
-            "Avaliar duplicidade terapêutica."
-        )
-
-    pares_risco = [
-        ("diclofenaco", "losartana"),
-        ("ibuprofeno", "enalapril"),
-        ("sinvastatina", "claritromicina"),
-        ("varfarina", "amoxicilina"),
-        ("metformina", "alcool"),
-    ]
-
-    interacoes = []
-
-    for a, b in pares_risco:
-        if a in nomes and b in nomes:
-            interacoes.append(f"{a} + {b}")
-
-    if interacoes:
-        risco = "alto"
-        score += 3
-
-        alertas.append(
-            f"Possíveis interações relevantes: {', '.join(interacoes)}"
-        )
-
-        recomendacoes.append(
-            "Avaliar risco de interação medicamentosa."
-        )
-
-    medicamentos_pim = [
-        "diazepam",
-        "clonazepam",
-        "amitriptilina",
-        "carisoprodol",
-        "prometazina",
-    ]
-
-    potencialmente_inapropriados = []
-
-    for nome in nomes:
-        if nome in medicamentos_pim:
-            potencialmente_inapropriados.append(nome)
-
-    if potencialmente_inapropriados:
-        score += 2
-
-        if risco != "alto":
-            risco = "moderado"
-
-        alertas.append(
-            "Medicamentos potencialmente inapropriados para uso prolongado."
-        )
-
-        recomendacoes.append(
-            "Avaliar necessidade e segurança dos medicamentos potencialmente inapropriados."
-        )
-
-    if not alertas:
-        alertas.append(
-            "Nenhum risco farmacoterapêutico relevante identificado automaticamente."
-        )
-
-    if not recomendacoes:
-        recomendacoes.append(
-            "Manter acompanhamento farmacoterapêutico."
-        )
-
-    interpretacao = (
-        f"Paciente em uso de {total_medicamentos} medicamento(s) ativos. "
-        f"Classificação automatizada de risco farmacoterapêutico: {risco}."
-    )
-
-    return {
-        "paciente_id": paciente.id,
-        "paciente": paciente.nome,
-
-        "total_medicamentos": total_medicamentos,
-
-        "polifarmacia": polifarmacia,
-
-        "risco": risco,
-        "score": score,
-
-        "medicamentos": lista_medicamentos,
-
-        "alertas": alertas,
-        "recomendacoes": recomendacoes,
-
-        "duplicidades": duplicidades,
-        "interacoes": interacoes,
-
-        "potencialmente_inapropriados":
-            potencialmente_inapropriados,
-
-        "interpretacao":
-            interpretacao,
-    }
 
 @router.get("/intervencao-farmacoterapia/{intervencao_id}/desfechos")
 def listar_desfechos_intervencao_farmacoterapia(
     intervencao_id: int,
     db: Session = Depends(get_db_consultorio),
-    current = Depends(get_current_user_consultorio)
+    current: UserConsultorio = Depends(get_current_user_consultorio)
 ):
     desfechos = db.query(DesfechoIntervencaoFarmacoterapia).filter(
         DesfechoIntervencaoFarmacoterapia.intervencao_id == intervencao_id
     ).order_by(DesfechoIntervencaoFarmacoterapia.criado_em.desc()).all()
 
     return desfechos
-

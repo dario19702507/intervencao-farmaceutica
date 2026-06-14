@@ -18,7 +18,7 @@ export default function PerfilProfissional() {
 
   async function carregarPerfil() {
     try {
-      const response = await api.get("/consultorio/me");
+      const response = await api.get("/me");
 
       setPerfil({
         nome_completo: response.data.nome_completo || "",

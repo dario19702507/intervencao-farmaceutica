@@ -1,45 +1,36 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+from datetime import datetime, date
 
+from routers.utils_prioridade import definir_prioridade, gerar_sugestao_conduta
 from routers.consultorio import (
     get_db_consultorio,
     get_current_user_consultorio,
+    registrar_auditoria,
+    triagem_risco,
+
+    EvolucaoClinica,
+    DesfechoClinico,
+    ProntuarioClinico,
+    PacienteClinico,
+
+    AtendimentoRapido,
+    AfericaoPA,
+    GlicemiaCapilar,
+    Bioimpedancia,
+    PicoFluxo,
+    PacienteSimplificado,
+
+    EvolucaoFarmaceutica,
+
     ResolucaoAlertaClinico,
     ResolucaoAlertaClinicoCreate,
-    registrar_auditoria,
 )
 
 router = APIRouter(
     prefix="/consultorio",
     tags=["Alertas Clínicos"]
 )
-
-def definir_prioridade(riscos: list[str]) -> str:
-    texto = " ".join(riscos).lower()
-
-    if "crise_hipertensiva" in texto or "zona_vermelha" in texto:
-        return "muito_alta"
-
-    if len(riscos) >= 3:
-        return "alta"
-
-    if len(riscos) == 2:
-        return "moderada"
-
-    return "baixa"
-
-
-def gerar_sugestao_conduta(prioridade: str) -> str:
-    if prioridade == "muito_alta":
-        return "Avaliar necessidade de encaminhamento imediato conforme protocolo local."
-
-    if prioridade == "alta":
-        return "Considerar conversão para consulta farmacêutica e acompanhamento clínico."
-
-    if prioridade == "moderada":
-        return "Orientar o paciente e avaliar necessidade de novo atendimento ou consulta farmacêutica."
-
-    return "Registrar orientação breve e considerar acompanhamento se houver recorrência."
 
 @router.get("/alertas-pendentes")
 def alertas_pendentes(

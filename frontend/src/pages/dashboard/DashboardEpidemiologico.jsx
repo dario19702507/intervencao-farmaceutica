@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api/api";
+import PrmIndicadores from "../analytics/PrmIndicadores.jsx";
+import IntervencoesPadronizadasIndicadores from "../analytics/IntervencoesPadronizadasIndicadores.jsx";
+import "../analytics/AnalyticsWorkspace.css";
 
 import {
   ResponsiveContainer,
@@ -409,6 +412,20 @@ const dadosAdesaoFarmaco = dashboardFarmaco
           onClick={() => setAbaDashboard("efetividade")}
         >
           Efetividade do cuidado
+        </button>
+
+        <button
+          className={abaDashboard === "prm" ? "active" : ""}
+          onClick={() => setAbaDashboard("prm")}
+        >
+          PRM
+        </button>
+
+        <button
+          className={abaDashboard === "intervencoes" ? "active" : ""}
+          onClick={() => setAbaDashboard("intervencoes")}
+        >
+          Intervenções
         </button>
 
         <button
@@ -1131,6 +1148,14 @@ const dadosAdesaoFarmaco = dashboardFarmaco
             </div>
           </div>
         )}
+
+      {abaDashboard === "prm" && (
+        <PrmIndicadores />
+      )}
+
+      {abaDashboard === "intervencoes" && (
+        <IntervencoesPadronizadasIndicadores />
+      )}
 
       {abaDashboard === "cientifico" && (
         <div className="prontuario-tab-content">

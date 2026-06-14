@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { api } from "../../api/api";
 import { ArrowLeft, UserRound } from "lucide-react";
+import CuidadoFarmaceutico from "./CuidadoFarmaceutico.jsx";
 
 export default function Consultorio({ usuario }) {
   const [pacientes, setPacientes] = useState([]);
   const [pacienteSelecionado, setPacienteSelecionado] = useState(null);
   const [detalhe, setDetalhe] = useState(null);
+  const [resumoCuidado, setResumoCuidado] = useState(null);
 
   const [loading, setLoading] = useState(true);
   const [loadingProntuario, setLoadingProntuario] = useState(false);
@@ -65,14 +67,52 @@ export default function Consultorio({ usuario }) {
   });
 
   const [novoMedicamento, setNovoMedicamento] = useState({
+    catalogo_medicamento_id: "",
     nome_medicamento: "",
     dose: "",
     via: "",
     frequencia: "",
+    frequencia_uso: "",
+    horarios_uso: "",
+    uso_se_necessario: false,
     indicacao: "",
     uso_continuo: true,
     adesao_referida: "",
     observacoes: "",
+  });
+
+
+  const [opcoesCicloVidaMedicamento, setOpcoesCicloVidaMedicamento] = useState({
+    status_farmacoterapia: ["EM_USO", "TROCADO", "SUSPENSO", "ENCERRADO"],
+    motivos_troca: [],
+    motivos_suspensao: [],
+    motivos_encerramento: [],
+    tipos_suspensao: ["TEMPORARIA", "DEFINITIVA"],
+  });
+  const [medicamentoCicloVida, setMedicamentoCicloVida] = useState(null);
+  const [acaoCicloVidaMedicamento, setAcaoCicloVidaMedicamento] = useState(null);
+  const [salvandoCicloVidaMedicamento, setSalvandoCicloVidaMedicamento] = useState(false);
+  const [medicamentoSubstituto, setMedicamentoSubstituto] = useState({
+    catalogo_medicamento_id: "",
+    nome_medicamento: "",
+    dose: "",
+    via: "",
+    frequencia: "",
+    frequencia_uso: "",
+    horarios_uso: "",
+    uso_se_necessario: false,
+    indicacao: "",
+    uso_continuo: true,
+    adesao_referida: "",
+    observacoes: "",
+  });
+  const [formCicloVidaMedicamento, setFormCicloVidaMedicamento] = useState({
+    data_evento: "",
+    motivo: "",
+    tipo_suspensao: "DEFINITIVA",
+    prm_relacionado_id: "",
+    intervencao_relacionada_id: "",
+    observacao: "",
   });
 
   const [novaEvolucao, setNovaEvolucao] = useState({
@@ -118,7 +158,8 @@ export default function Consultorio({ usuario }) {
 
   const [avaliacaoPolifarmacia, setAvaliacaoPolifarmacia] = useState(null);
   const [evolucaoFarmacoterapeutica, setEvolucaoFarmacoterapeutica] = useState(null);
-  const [abaProntuario, setAbaProntuario] = useState("identificacao");
+  const [abaProntuario, setAbaProntuario] = useState("resumo");
+  const [abaConsultorio, setAbaConsultorio] = useState("centro");
 
   const [planosCuidado, setPlanosCuidado] = useState([]);
   const [mostrarFormularioPlano, setMostrarFormularioPlano] = useState(false);
@@ -133,26 +174,553 @@ export default function Consultorio({ usuario }) {
   });
 
   const [sugestoesPlano, setSugestoesPlano] = useState(null);
+  const [opcoesFarmacoterapia, setOpcoesFarmacoterapia] = useState({
+    vias_administracao: [],
+    horarios_padrao: [],
+    frequencias_uso: [],
+  });
+
+  const [opcoesMetas, setOpcoesMetas] = useState({
+    categorias: [],
+    subcategorias: {},
+    unidades: [],
+    status: [],
+    origens: [],
+  });
+  const [mostrarFormularioMeta, setMostrarFormularioMeta] = useState(false);
+  const [salvandoMeta, setSalvandoMeta] = useState(false);
+  const [metaEditandoId, setMetaEditandoId] = useState(null);
+  const [novaMeta, setNovaMeta] = useState({
+    prm_id: "",
+    intervencao_farmacoterapia_id: "",
+    categoria: "CONTROLE_CLINICO",
+    subcategoria: "PRESSAO_ARTERIAL",
+    descricao: "",
+    valor_atual: "",
+    valor_alvo: "",
+    unidade: "",
+    data_inicial: "",
+    data_prevista: "",
+    data_conclusao: "",
+    status: "EM_ANDAMENTO",
+    origem: "CONSULTA",
+  });
+
+  const [opcoesPlanoCuidado, setOpcoesPlanoCuidado] = useState({
+    tipos_acao: [],
+    status_acao: [],
+    responsaveis: ["FARMACEUTICO", "PACIENTE", "CUIDADOR", "EQUIPE_APS", "MEDICO", "OUTRO"],
+    prioridades: ["NORMAL", "IMPORTANTE", "URGENTE"],
+  });
+  const [mostrarFormularioAcao, setMostrarFormularioAcao] = useState(false);
+  const [salvandoAcao, setSalvandoAcao] = useState(false);
+  const [acaoEditandoId, setAcaoEditandoId] = useState(null);
+  const [novaAcaoPlano, setNovaAcaoPlano] = useState({
+    problema_id: "",
+    meta_id: "",
+    intervencao_farmacoterapia_id: "",
+    tipo_acao: "ORIENTACAO",
+    descricao: "",
+    responsavel: "FARMACEUTICO",
+    prazo: "",
+    prioridade: "NORMAL",
+    status: "PENDENTE",
+    resultado: "",
+  });
+
+  const [catalogoMedicamentos, setCatalogoMedicamentos] = useState([]);
+  const [buscaCatalogoMedicamento, setBuscaCatalogoMedicamento] = useState("");
+  const [buscaCatalogoMedicamentoSubstituto, setBuscaCatalogoMedicamentoSubstituto] = useState("");
 
   useEffect(() => {
     carregarPacientes();
+    carregarOpcoesFarmacoterapia();
+    carregarOpcoesMetas();
+    carregarOpcoesPlanoCuidado();
+    carregarOpcoesCicloVidaMedicamento();
   }, []);
+
+  useEffect(() => {
+    if (mostrarFormularioMedicamento) {
+      carregarCatalogoMedicamentos(buscaCatalogoMedicamento);
+    }
+  }, [mostrarFormularioMedicamento]);
+
+  useEffect(() => {
+    if (medicamentoCicloVida && acaoCicloVidaMedicamento === "TROCAR") {
+      carregarCatalogoMedicamentos(buscaCatalogoMedicamentoSubstituto);
+    }
+  }, [medicamentoCicloVida, acaoCicloVidaMedicamento, buscaCatalogoMedicamentoSubstituto]);
 
   function podeRegistrarClinico() {
     if (!usuario) return false;
-    if (usuario.perfil === "admin") return true;
-    return ["Farmacêutico", "Docente"].includes(usuario.categoria_profissional);
+
+    const normalizar = (valor) =>
+      String(valor || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .trim();
+
+    const perfil = normalizar(usuario.perfil || usuario.role || usuario.tipo_usuario);
+    const categoria = normalizar(usuario.categoria_profissional || usuario.profissao || usuario.funcao);
+
+    if ([perfil, categoria].some((v) => v.includes("leitura") || v.includes("visualizador"))) {
+      return false;
+    }
+
+    if ([perfil, categoria].some((v) =>
+      v.includes("admin") ||
+      v.includes("farmaceut") ||
+      v.includes("docente") ||
+      v.includes("preceptor") ||
+      v.includes("residente") ||
+      v.includes("estagi")
+    )) {
+      return true;
+    }
+
+    // Mantém a usabilidade do ambiente de desenvolvimento: usuário autenticado pode registrar,
+    // exceto quando explicitamente marcado como leitura/visualizador.
+    return true;
   }
 
   function traduzirTipoEvento(tipo) {
+    const chave = String(tipo || "").toLowerCase();
     const mapa = {
+      ceaf: "CEAF",
+      agenda: "Agenda",
+      documentos: "Documentos",
+      ocr: "OCR documental",
+      consultorio: "Consultório",
+      farmacoterapia: "Farmacoterapia",
+      prm: "PRM",
+      intervencao: "Intervenção",
+      meta: "Meta terapêutica",
+      plano: "Plano de cuidado",
+      desfecho: "Desfecho",
       evolucao_clinica: "Evolução clínica",
       intervencao_farmacoterapeutica: "Intervenção farmacoterapêutica",
       desfecho_clinico: "Desfecho clínico",
-      farmacoterapia: "Farmacoterapia",
+      desfecho_intervencao: "Desfecho da intervenção",
+      medicamento_registrado: "Medicamento registrado",
+      prm_identificado: "PRM identificado",
+      meta_terapeutica: "Meta terapêutica",
+      acao_plano_cuidado: "Ação do plano de cuidado",
+      ocr_executado: "OCR executado",
+      documento_anexado: "Documento anexado",
+      status_documental: "Status documental",
+      processo_documental: "Processo documental",
+      retirada: "Retirada",
+      inclusao: "Inclusão",
+      renovacao: "Renovação",
+      adequacao: "Adequação",
+      encerramento: "Encerramento",
     };
 
-    return mapa[tipo] || tipo;
+    return mapa[chave] || String(tipo || "Evento").replaceAll("_", " ").toLowerCase();
+  }
+
+  function iconeTimeline(evento) {
+    const categoria = String(evento?.categoria || evento?.tipo || "").toUpperCase();
+    const tipo = String(evento?.tipo || "").toUpperCase();
+    if (categoria === "CEAF" || ["RETIRADA", "INCLUSAO", "RENOVACAO", "ADEQUACAO", "ENCERRAMENTO"].includes(tipo)) return "🏥";
+    if (categoria === "AGENDA") return "📅";
+    if (categoria === "DOCUMENTOS") return "📄";
+    if (categoria === "OCR") return "🔎";
+    if (categoria === "CONSULTORIO") return "🩺";
+    if (categoria === "FARMACOTERAPIA") return "💊";
+    if (categoria === "PRM") return "⚠️";
+    if (categoria === "INTERVENCAO") return "🧭";
+    if (categoria === "META") return "🎯";
+    if (categoria === "PLANO") return "📌";
+    if (categoria === "DESFECHO") return "📈";
+    return "•";
+  }
+
+  function traduzirStatus(valor) {
+    if (!valor) return "—";
+    return String(valor).replaceAll("_", " ").toLowerCase();
+  }
+
+  function ehStatusAberto(status) {
+    return ["ABERTO", "EM_ACOMPANHAMENTO", "PENDENTE", "EM_ANDAMENTO", "ATIVA"].includes(
+      String(status || "").toUpperCase()
+    );
+  }
+
+  async function carregarResumoCuidado(pacienteId) {
+    try {
+      const response = await api.get(`/consultorio/paciente-clinico/${pacienteId}/resumo-cuidado`);
+      const resumo = response.data || null;
+      setResumoCuidado(resumo);
+      setMedicamentos(resumo?.farmacoterapia?.medicamentos || []);
+      setIntervencoesFarmacoterapia(resumo?.intervencoes_farmacoterapia || []);
+      setLinhaTempoClinica(resumo?.timeline || []);
+      setAvaliacaoPolifarmacia(resumo?.farmacoterapia?.complexidade || null);
+      return resumo;
+    } catch (error) {
+      console.warn("Resumo de cuidado indisponível; mantendo carregamento legado.", error.response?.data || error);
+      setResumoCuidado(null);
+      return null;
+    }
+  }
+
+  async function carregarOpcoesFarmacoterapia() {
+    try {
+      const response = await api.get("/consultorio/farmacoterapia/opcoes");
+      setOpcoesFarmacoterapia(response.data || { vias_administracao: [], horarios_padrao: [], frequencias_uso: [] });
+    } catch (error) {
+      console.warn("Opções de farmacoterapia indisponíveis.", error.response?.data || error);
+    }
+  }
+
+
+  async function carregarOpcoesCicloVidaMedicamento() {
+    try {
+      const response = await api.get("/consultorio/farmacoterapia/opcoes");
+      setOpcoesCicloVidaMedicamento((atual) => ({ ...atual, ...(response.data || {}) }));
+    } catch (error) {
+      console.warn("Opções do ciclo de vida da farmacoterapia indisponíveis.", error.response?.data || error);
+    }
+  }
+
+  function abrirAcaoMedicamento(medicamento, acao) {
+    setMedicamentoCicloVida(medicamento);
+    setAcaoCicloVidaMedicamento(acao);
+    setFormCicloVidaMedicamento({
+      data_evento: new Date().toISOString().slice(0, 10),
+      motivo: "",
+      tipo_suspensao: "DEFINITIVA",
+      prm_relacionado_id: "",
+      intervencao_relacionada_id: "",
+      observacao: "",
+    });
+    setMedicamentoSubstituto({
+      catalogo_medicamento_id: "",
+      nome_medicamento: "",
+      dose: "",
+      via: medicamento?.via || "",
+      frequencia: "",
+      frequencia_uso: "",
+      horarios_uso: "",
+      uso_se_necessario: false,
+      indicacao: medicamento?.indicacao || "",
+      uso_continuo: true,
+      adesao_referida: "",
+      observacoes: "",
+    });
+    setBuscaCatalogoMedicamentoSubstituto("");
+  }
+
+  function fecharAcaoMedicamento() {
+    setMedicamentoCicloVida(null);
+    setAcaoCicloVidaMedicamento(null);
+  }
+
+  async function salvarCicloVidaMedicamento() {
+    if (!medicamentoCicloVida?.id || !acaoCicloVidaMedicamento) return;
+    if (!formCicloVidaMedicamento.motivo) {
+      alert("Informe o motivo da alteração da farmacoterapia.");
+      return;
+    }
+
+    try {
+      setSalvandoCicloVidaMedicamento(true);
+      const prmId = formCicloVidaMedicamento.prm_relacionado_id ? Number(formCicloVidaMedicamento.prm_relacionado_id) : null;
+      const intervencaoId = formCicloVidaMedicamento.intervencao_relacionada_id ? Number(formCicloVidaMedicamento.intervencao_relacionada_id) : null;
+
+      if (acaoCicloVidaMedicamento === "TROCAR") {
+        if (!medicamentoSubstituto.catalogo_medicamento_id && !medicamentoSubstituto.nome_medicamento.trim()) {
+          alert("Informe o medicamento substituto.");
+          return;
+        }
+        await api.post(`/consultorio/medicamentos/${medicamentoCicloVida.id}/trocar`, {
+          novo_medicamento: {
+            ...medicamentoSubstituto,
+            catalogo_medicamento_id: medicamentoSubstituto.catalogo_medicamento_id ? Number(medicamentoSubstituto.catalogo_medicamento_id) : null,
+          },
+          data_troca: formCicloVidaMedicamento.data_evento || null,
+          motivo_troca: formCicloVidaMedicamento.motivo,
+          prm_relacionado_id: prmId,
+          intervencao_relacionada_id: intervencaoId,
+          observacao: formCicloVidaMedicamento.observacao,
+        });
+      } else if (acaoCicloVidaMedicamento === "SUSPENDER") {
+        await api.post(`/consultorio/medicamentos/${medicamentoCicloVida.id}/suspender`, {
+          data_suspensao: formCicloVidaMedicamento.data_evento || null,
+          motivo_suspensao: formCicloVidaMedicamento.motivo,
+          tipo_suspensao: formCicloVidaMedicamento.tipo_suspensao,
+          prm_relacionado_id: prmId,
+          intervencao_relacionada_id: intervencaoId,
+          observacao: formCicloVidaMedicamento.observacao,
+        });
+      } else if (acaoCicloVidaMedicamento === "ENCERRAR") {
+        await api.post(`/consultorio/medicamentos/${medicamentoCicloVida.id}/encerrar`, {
+          data_encerramento: formCicloVidaMedicamento.data_evento || null,
+          motivo_encerramento: formCicloVidaMedicamento.motivo,
+          prm_relacionado_id: prmId,
+          intervencao_relacionada_id: intervencaoId,
+          observacao: formCicloVidaMedicamento.observacao,
+        });
+      }
+
+      fecharAcaoMedicamento();
+      await atualizarProntuario(pacienteSelecionado.id);
+      alert("Evolução da farmacoterapia registrada com sucesso.");
+    } catch (error) {
+      console.error("Erro ao registrar ciclo de vida do medicamento:", error.response?.data || error);
+      alert("Erro ao registrar evolução da farmacoterapia.");
+    } finally {
+      setSalvandoCicloVidaMedicamento(false);
+    }
+  }
+
+  async function carregarOpcoesMetas() {
+    try {
+      const response = await api.get("/consultorio/metas/opcoes");
+      const data = response.data || {};
+      setOpcoesMetas({
+        categorias: data.categorias || [],
+        subcategorias: data.subcategorias || {},
+        unidades: data.unidades || [],
+        status: data.status || [],
+        origens: data.origens || [],
+      });
+    } catch (error) {
+      console.warn("Opções de metas terapêuticas indisponíveis.", error.response?.data || error);
+    }
+  }
+
+  function resetarFormularioMeta() {
+    setMetaEditandoId(null);
+    setNovaMeta({
+      prm_id: "",
+      intervencao_farmacoterapia_id: "",
+      categoria: "CONTROLE_CLINICO",
+      subcategoria: "PRESSAO_ARTERIAL",
+      descricao: "",
+      valor_atual: "",
+      valor_alvo: "",
+      unidade: "",
+      data_inicial: "",
+      data_prevista: "",
+      data_conclusao: "",
+      status: "EM_ANDAMENTO",
+      origem: "CONSULTA",
+    });
+  }
+
+  function abrirNovaMeta() {
+    resetarFormularioMeta();
+    setMostrarFormularioMeta(true);
+  }
+
+  function iniciarEdicaoMeta(meta) {
+    const categoria = meta.categoria || "CONTROLE_CLINICO";
+    const subcategorias = opcoesMetas.subcategorias?.[categoria] || [];
+    setMetaEditandoId(meta.id);
+    setNovaMeta({
+      prm_id: meta.prm_id || "",
+      intervencao_farmacoterapia_id: meta.intervencao_farmacoterapia_id || "",
+      categoria,
+      subcategoria: meta.subcategoria || subcategorias[0] || "OUTRA",
+      descricao: meta.descricao || "",
+      valor_atual: meta.valor_atual || "",
+      valor_alvo: meta.valor_alvo || "",
+      unidade: meta.unidade || "",
+      data_inicial: String(meta.data_inicial || "").slice(0, 10),
+      data_prevista: String(meta.data_prevista || meta.prazo || "").slice(0, 10),
+      data_conclusao: String(meta.data_conclusao || "").slice(0, 10),
+      status: meta.status || "EM_ANDAMENTO",
+      origem: meta.origem || "CONSULTA",
+    });
+    setMostrarFormularioMeta(true);
+  }
+
+  async function salvarMetaTerapeutica() {
+    if (!pacienteSelecionado?.id) {
+      alert("Selecione um paciente antes de registrar a meta.");
+      return;
+    }
+    if (!novaMeta.descricao.trim()) {
+      alert("Informe a descrição da meta terapêutica.");
+      return;
+    }
+    setSalvandoMeta(true);
+    try {
+      const payload = {
+        paciente_id: pacienteSelecionado.id,
+        prm_id: novaMeta.prm_id || null,
+        intervencao_farmacoterapia_id: novaMeta.intervencao_farmacoterapia_id || null,
+        categoria: novaMeta.categoria,
+        subcategoria: novaMeta.subcategoria,
+        descricao: novaMeta.descricao,
+        valor_atual: novaMeta.valor_atual || null,
+        valor_alvo: novaMeta.valor_alvo || null,
+        unidade: novaMeta.unidade || null,
+        data_inicial: novaMeta.data_inicial || null,
+        data_prevista: novaMeta.data_prevista || null,
+        data_conclusao: novaMeta.data_conclusao || null,
+        status: novaMeta.status || "EM_ANDAMENTO",
+        origem: novaMeta.origem || "CONSULTA",
+      };
+
+      if (metaEditandoId) {
+        await api.put(`/consultorio/metas/${metaEditandoId}`, payload);
+      } else {
+        await api.post("/consultorio/metas", payload);
+      }
+
+      resetarFormularioMeta();
+      setMostrarFormularioMeta(false);
+      await carregarResumoCuidado(pacienteSelecionado.id);
+    } catch (error) {
+      console.error(error);
+      alert(error.response?.data?.detail || "Não foi possível salvar a meta terapêutica.");
+    } finally {
+      setSalvandoMeta(false);
+    }
+  }
+
+
+  async function carregarOpcoesPlanoCuidado() {
+    try {
+      const response = await api.get("/consultorio/cuidado/opcoes");
+      const data = response.data || {};
+      setOpcoesPlanoCuidado({
+        tipos_acao: data.tipos_acao || ["ORIENTACAO", "MONITORAMENTO", "ENCAMINHAMENTO", "CONTATO", "EDUCACAO_SAUDE", "OUTRO"],
+        status_acao: data.status_acao || ["PENDENTE", "EM_ANDAMENTO", "CONCLUIDA", "CANCELADA"],
+        responsaveis: data.responsaveis || ["FARMACEUTICO", "PACIENTE", "CUIDADOR", "EQUIPE_APS", "MEDICO", "OUTRO"],
+        prioridades: data.prioridades || ["NORMAL", "IMPORTANTE", "URGENTE"],
+      });
+    } catch (error) {
+      console.warn("Opções do plano de cuidado indisponíveis.", error.response?.data || error);
+    }
+  }
+
+  function resetarFormularioAcaoPlano() {
+    setAcaoEditandoId(null);
+    setNovaAcaoPlano({
+      problema_id: "",
+      meta_id: "",
+      intervencao_farmacoterapia_id: "",
+      tipo_acao: "ORIENTACAO",
+      descricao: "",
+      responsavel: "FARMACEUTICO",
+      prazo: "",
+      prioridade: "NORMAL",
+      status: "PENDENTE",
+      resultado: "",
+    });
+  }
+
+  function abrirNovaAcaoPlano() {
+    resetarFormularioAcaoPlano();
+    setMostrarFormularioAcao(true);
+  }
+
+  function iniciarEdicaoAcaoPlano(acao) {
+    setAcaoEditandoId(acao.id);
+    setNovaAcaoPlano({
+      problema_id: acao.problema_id || "",
+      meta_id: acao.meta_id || "",
+      intervencao_farmacoterapia_id: acao.intervencao_farmacoterapia_id || "",
+      tipo_acao: acao.tipo_acao || "ORIENTACAO",
+      descricao: acao.descricao || "",
+      responsavel: acao.responsavel || "FARMACEUTICO",
+      prazo: String(acao.prazo || "").slice(0, 10),
+      prioridade: acao.prioridade || "NORMAL",
+      status: acao.status || "PENDENTE",
+      resultado: acao.resultado || "",
+    });
+    setMostrarFormularioAcao(true);
+  }
+
+  async function salvarAcaoPlanoCuidado() {
+    if (!pacienteSelecionado?.id) {
+      alert("Selecione um paciente antes de registrar a ação do plano.");
+      return;
+    }
+    if (!novaAcaoPlano.descricao.trim()) {
+      alert("Informe a descrição da ação do plano de cuidado.");
+      return;
+    }
+    setSalvandoAcao(true);
+    try {
+      const payload = {
+        problema_id: novaAcaoPlano.problema_id || null,
+        meta_id: novaAcaoPlano.meta_id || null,
+        intervencao_farmacoterapia_id: novaAcaoPlano.intervencao_farmacoterapia_id || null,
+        tipo_acao: novaAcaoPlano.tipo_acao || "OUTRO",
+        descricao: novaAcaoPlano.descricao,
+        responsavel: novaAcaoPlano.responsavel || null,
+        prazo: novaAcaoPlano.prazo || null,
+        prioridade: novaAcaoPlano.prioridade || "NORMAL",
+        status: novaAcaoPlano.status || "PENDENTE",
+        resultado: novaAcaoPlano.resultado || null,
+      };
+
+      if (acaoEditandoId) {
+        await api.put(`/consultorio/acoes-plano-cuidado/${acaoEditandoId}/status`, {
+          status: payload.status,
+          resultado: payload.resultado,
+        });
+      } else {
+        await api.post(`/consultorio/paciente-clinico/${pacienteSelecionado.id}/acoes-plano-cuidado`, payload);
+      }
+
+      resetarFormularioAcaoPlano();
+      setMostrarFormularioAcao(false);
+      await carregarResumoCuidado(pacienteSelecionado.id);
+    } catch (error) {
+      console.error(error);
+      alert(error.response?.data?.detail || "Não foi possível salvar a ação do plano de cuidado.");
+    } finally {
+      setSalvandoAcao(false);
+    }
+  }
+
+  async function carregarCatalogoMedicamentos(busca = "") {
+    try {
+      const response = await api.get("/consultorio/catalogo-medicamentos", {
+        params: { busca: busca || undefined, ativo: true, limite: 80 },
+      });
+      setCatalogoMedicamentos(response.data?.medicamentos || []);
+    } catch (error) {
+      console.warn("Catálogo de medicamentos indisponível.", error.response?.data || error);
+      setCatalogoMedicamentos([]);
+    }
+  }
+
+  function aplicarMedicamentoCatalogo(catalogoId) {
+    const selecionado = catalogoMedicamentos.find((m) => String(m.id) === String(catalogoId));
+    setNovoMedicamento((atual) => ({
+      ...atual,
+      catalogo_medicamento_id: catalogoId,
+      nome_medicamento: selecionado?.descricao_completa || atual.nome_medicamento,
+      dose: atual.dose || selecionado?.concentracao || "",
+      via: atual.via || inferirViaPorFormaFarmaceutica(selecionado?.forma_farmaceutica),
+    }));
+  }
+
+  function aplicarMedicamentoSubstitutoCatalogo(catalogoId) {
+    const selecionado = catalogoMedicamentos.find((m) => String(m.id) === String(catalogoId));
+    setMedicamentoSubstituto((atual) => ({
+      ...atual,
+      catalogo_medicamento_id: catalogoId,
+      nome_medicamento: selecionado?.descricao_completa || atual.nome_medicamento,
+      dose: atual.dose || selecionado?.concentracao || "",
+      via: atual.via || inferirViaPorFormaFarmaceutica(selecionado?.forma_farmaceutica),
+    }));
+  }
+
+  function inferirViaPorFormaFarmaceutica(forma) {
+    const texto = String(forma || "").toLowerCase();
+    if (texto.includes("inal")) return "inalatória";
+    if (texto.includes("injet")) return "subcutânea";
+    if (texto.includes("comprim") || texto.includes("cápsula") || texto.includes("capsula")) return "oral";
+    return "";
   }
 
   async function carregarPacientes() {
@@ -211,6 +779,12 @@ export default function Consultorio({ usuario }) {
   }
 
   async function atualizarProntuario(pacienteId) {
+    const resumo = await carregarResumoCuidado(pacienteId);
+    if (resumo) {
+      await carregarEvolucaoFarmacoterapeutica(pacienteId);
+      return;
+    }
+
     await carregarMedicamentos(pacienteId);
     await carregarIntervencoes(pacienteId);
     await carregarLinhaTempo(pacienteId);
@@ -227,7 +801,7 @@ export default function Consultorio({ usuario }) {
       setMostrarFormularioIntervencao(false);
       setEvolucaoParaDesfecho(null);
       setIntervencaoParaDesfecho(null);
-      setAbaProntuario("identificacao");
+      setAbaProntuario("resumo");
 
       const detalheResponse = await api.get(`/consultorio/paciente-clinico/${paciente.id}`);
       setDetalhe(detalheResponse.data);
@@ -262,14 +836,9 @@ export default function Consultorio({ usuario }) {
       });
 
       await atualizarProntuario(paciente.id);
-
-      await carregarAvaliacaoPolifarmacia(paciente.id);
-
       await carregarPlanosCuidado(paciente.id);
-
       await carregarSugestoesPlano(paciente.id);
-
-      await carregarEvolucaoFarmacoterapeutica(paciente.id);    } catch (error) {
+    } catch (error) {
       console.error("Erro ao abrir prontuário:", error.response?.data || error);
       alert("Erro ao abrir prontuário.");
     } finally {
@@ -280,6 +849,7 @@ export default function Consultorio({ usuario }) {
   function voltarLista() {
     setPacienteSelecionado(null);
     setDetalhe(null);
+    setResumoCuidado(null);
     setLinhaTempoClinica([]);
     setMedicamentos([]);
     setIntervencoesFarmacoterapia([]);
@@ -290,7 +860,7 @@ export default function Consultorio({ usuario }) {
     setIntervencaoParaDesfecho(null);
     setAvaliacaoPolifarmacia(null);
     setEvolucaoFarmacoterapeutica(null);
-    setAbaProntuario("identificacao");
+    setAbaProntuario("resumo");
     setPlanosCuidado([]);
     setMostrarFormularioPlano(false);
     setPlanoEditando(null);
@@ -366,24 +936,35 @@ export default function Consultorio({ usuario }) {
       return;
     }
 
-    if (!novoMedicamento.nome_medicamento.trim()) {
-      alert("Informe o nome do medicamento.");
+    if (!novoMedicamento.catalogo_medicamento_id && !novoMedicamento.nome_medicamento.trim()) {
+      alert("Selecione um medicamento do catálogo ou informe o nome manualmente.");
       return;
     }
 
     try {
       setSalvandoMedicamento(true);
 
+      const payload = {
+        ...novoMedicamento,
+        catalogo_medicamento_id: novoMedicamento.catalogo_medicamento_id
+          ? Number(novoMedicamento.catalogo_medicamento_id)
+          : null,
+      };
+
       await api.post(
         `/consultorio/paciente-clinico/${pacienteSelecionado.id}/medicamento`,
-        novoMedicamento
+        payload
       );
 
       setNovoMedicamento({
+        catalogo_medicamento_id: "",
         nome_medicamento: "",
         dose: "",
         via: "",
         frequencia: "",
+        frequencia_uso: "",
+        horarios_uso: "",
+        uso_se_necessario: false,
         indicacao: "",
         uso_continuo: true,
         adesao_referida: "",
@@ -681,6 +1262,19 @@ async function concluirPlanoCuidado(plano) {
     }
   }
 
+  const problemasFarmacoterapeuticos = resumoCuidado?.problemas_farmacoterapeuticos || [];
+  const metasTerapeuticas = resumoCuidado?.metas_terapeuticas || [];
+  const subcategoriasMetaAtual = opcoesMetas.subcategorias?.[novaMeta.categoria] || [];
+  const acoesPlanoCuidado = resumoCuidado?.acoes_plano_cuidado || [];
+  const complexidadeCuidado = resumoCuidado?.farmacoterapia?.complexidade || avaliacaoPolifarmacia;
+  const problemasAbertos = problemasFarmacoterapeuticos.filter((p) => ehStatusAberto(p.status));
+  const metasAtivas = metasTerapeuticas.filter((m) => ehStatusAberto(m.status));
+  const acoesPendentes = acoesPlanoCuidado.filter((a) => ehStatusAberto(a.status));
+  const resumoTimelineUnificada = resumoCuidado?.timeline_unificada?.resumo_por_categoria || {};
+  const categoriasTimelineUnificada = Object.entries(resumoTimelineUnificada)
+    .filter(([, total]) => Number(total) > 0)
+    .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+
   if (pacienteSelecionado) {
     return (
       <div>
@@ -698,7 +1292,28 @@ async function concluirPlanoCuidado(plano) {
               )
             }
           >
-            Exportar PDF
+            Prontuário PDF
+          </button>
+
+          <button
+            className="secondary-button"
+            onClick={() => abrirPdfAutenticado(`/consultorio/paciente-clinico/${pacienteSelecionado.id}/plano-cuidado-pdf`)}
+          >
+            Imprimir plano
+          </button>
+
+          <button
+            className="secondary-button"
+            onClick={() => abrirPdfAutenticado(`/consultorio/paciente-clinico/${pacienteSelecionado.id}/evolucoes-clinicas-pdf`)}
+          >
+            Imprimir evoluções
+          </button>
+
+          <button
+            className="secondary-button"
+            onClick={() => abrirPdfAutenticado(`/consultorio/paciente-clinico/${pacienteSelecionado.id}/orientacoes-farmaceuticas-pdf`)}
+          >
+            Imprimir orientações
           </button>
 
           {podeRegistrarClinico() && (
@@ -746,7 +1361,7 @@ async function concluirPlanoCuidado(plano) {
           <p>Carregando prontuário...</p>
         ) : (
           <>
-            <div className="cards-grid two">
+            <div className="care-summary-strip">
               <div className="metric-card">
                 <span>Prontuário</span>
                 <strong>{detalhe?.prontuario?.status || "—"}</strong>
@@ -754,19 +1369,45 @@ async function concluirPlanoCuidado(plano) {
               </div>
 
               <div className="metric-card">
-                <span>Eventos na timeline</span>
+                <span>Complexidade</span>
+                <strong>{complexidadeCuidado?.classificacao || "—"}</strong>
+                <p>Escore: {complexidadeCuidado?.escore ?? "não calculado"}</p>
+              </div>
+
+              <div className="metric-card">
+                <span>PRM em aberto</span>
+                <strong>{problemasAbertos.length}</strong>
+                <p>{problemasFarmacoterapeuticos.length} problemas registrados</p>
+              </div>
+
+              <div className="metric-card">
+                <span>Metas ativas</span>
+                <strong>{metasAtivas.length}</strong>
+                <p>{acoesPendentes.length} ações pendentes no plano</p>
+              </div>
+
+              <div className="metric-card">
+                <span>Timeline</span>
                 <strong>{linhaTempoClinica.length}</strong>
-                <p>Histórico longitudinal do paciente</p>
+                <p>Eventos longitudinais</p>
               </div>
             </div>
 
-            <div className="prontuario-tabs">
+            <div className="care-workflow">
+              <button
+                type="button"
+                className={abaProntuario === "resumo" ? "active" : ""}
+                onClick={() => setAbaProntuario("resumo")}
+              >
+                1. Resumo
+              </button>
+
               <button
                 type="button"
                 className={abaProntuario === "identificacao" ? "active" : ""}
                 onClick={() => setAbaProntuario("identificacao")}
               >
-                Identificação
+                2. Dados do paciente
               </button>
 
               <button
@@ -774,7 +1415,7 @@ async function concluirPlanoCuidado(plano) {
                 className={abaProntuario === "perfil" ? "active" : ""}
                 onClick={() => setAbaProntuario("perfil")}
               >
-                Perfil clínico
+                3. Perfil clínico
               </button>
 
               <button
@@ -782,7 +1423,7 @@ async function concluirPlanoCuidado(plano) {
                 className={abaProntuario === "farmacoterapia" ? "active" : ""}
                 onClick={() => setAbaProntuario("farmacoterapia")}
               >
-                Farmacoterapia
+                4. Farmacoterapia
               </button>
 
               <button
@@ -790,7 +1431,23 @@ async function concluirPlanoCuidado(plano) {
                 className={abaProntuario === "intervencoes" ? "active" : ""}
                 onClick={() => setAbaProntuario("intervencoes")}
               >
-                Intervenções
+                5. PRM / Intervenções
+              </button>
+
+              <button
+                type="button"
+                className={abaProntuario === "metas" ? "active" : ""}
+                onClick={() => setAbaProntuario("metas")}
+              >
+                6. Metas e ações
+              </button>
+
+              <button
+                type="button"
+                className={abaProntuario === "plano" ? "active" : ""}
+                onClick={() => setAbaProntuario("plano")}
+              >
+                7. Plano narrativo
               </button>
 
               <button
@@ -798,14 +1455,7 @@ async function concluirPlanoCuidado(plano) {
                 className={abaProntuario === "evolucoes" ? "active" : ""}
                 onClick={() => setAbaProntuario("evolucoes")}
               >
-                Evoluções
-              </button>
-
-              <button
-                className={abaProntuario === "plano" ? "active" : ""}
-                onClick={() => setAbaProntuario("plano")}
-              >
-                Plano de cuidado
+                8. Evoluções
               </button>
 
               <button
@@ -813,9 +1463,82 @@ async function concluirPlanoCuidado(plano) {
                 className={abaProntuario === "timeline" ? "active" : ""}
                 onClick={() => setAbaProntuario("timeline")}
               >
-                Linha do tempo
+                9. Timeline
               </button>
             </div>
+
+            {abaProntuario === "resumo" && (
+              <div className="prontuario-tab-content">
+                <div className="care-overview-grid">
+                  <div className="form-card">
+                    <div className="section-header-row">
+                      <div>
+                        <h3>Resumo do cuidado farmacêutico</h3>
+                        <p className="muted">Visão única para orientar a consulta e reduzir navegação repetida.</p>
+                      </div>
+                    </div>
+
+                    <div className="cards-grid two">
+                      <div className="med-card">
+                        <strong>Farmacoterapia</strong>
+                        <p>{medicamentos.length} medicamento(s) ativo(s)</p>
+                        <p className="muted">Complexidade: {complexidadeCuidado?.classificacao || "não calculada"}</p>
+                      </div>
+
+                      <div className="med-card">
+                        <strong>Risco farmacoterapêutico</strong>
+                        <p>{problemasAbertos.length} PRM em aberto</p>
+                        <p className="muted">{complexidadeCuidado?.fatores?.join(", ") || "Sem fatores críticos registrados."}</p>
+                      </div>
+
+                      <div className="med-card">
+                        <strong>Metas e plano</strong>
+                        <p>{metasAtivas.length} meta(s) ativa(s)</p>
+                        <p className="muted">{acoesPendentes.length} ação(ões) pendente(s)</p>
+                      </div>
+
+                      <div className="med-card">
+                        <strong>Longitudinalidade</strong>
+                        <p>{linhaTempoClinica.length} evento(s) na timeline</p>
+                        <p className="muted">Use a linha do tempo para revisar evolução, intervenções e desfechos.</p>
+                      </div>
+                    </div>
+
+                    <div className="care-next-actions">
+                      <button className="secondary-button" onClick={() => setAbaProntuario("farmacoterapia")}>Revisar medicamentos</button>
+                      <button className="secondary-button" onClick={() => setAbaProntuario("intervencoes")}>Registrar PRM/intervenção</button>
+                      <button className="secondary-button" onClick={() => setAbaProntuario("metas")}>Metas e ações</button>
+                      <button className="secondary-button" onClick={() => setAbaProntuario("plano")}>Síntese narrativa</button>
+                    </div>
+                  </div>
+
+                  <div className="form-card">
+                    <h3>Pontos de atenção</h3>
+                    {problemasAbertos.length === 0 && metasAtivas.length === 0 && acoesPendentes.length === 0 ? (
+                      <p className="muted">Nenhuma pendência clínica estruturada registrada.</p>
+                    ) : (
+                      <div className="med-list compact">
+                        {problemasAbertos.slice(0, 4).map((p) => (
+                          <div className="med-card" key={`prm-resumo-${p.id}`}>
+                            <strong>{traduzirStatus(p.tipo)}</strong>
+                            <p>{p.descricao || "PRM sem descrição detalhada."}</p>
+                            <p className="muted">{p.categoria} · {p.gravidade} · {traduzirStatus(p.status)}</p>
+                          </div>
+                        ))}
+
+                        {metasAtivas.slice(0, 3).map((m) => (
+                          <div className="med-card" key={`meta-resumo-${m.id}`}>
+                            <strong>{m.parametro}</strong>
+                            <p>{m.descricao}</p>
+                            <p className="muted">Alvo: {m.valor_alvo || "não informado"} {m.unidade || ""}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {abaProntuario === "identificacao" && (
             <div className="form-card">
@@ -1248,23 +1971,67 @@ async function concluirPlanoCuidado(plano) {
                       <strong>{m.nome_medicamento}</strong>
                       <p>
                         {m.dose || "Dose não informada"} · {m.via || "Via não informada"} ·{" "}
-                        {m.frequencia || "Frequência não informada"}
+                        {m.frequencia_uso || m.frequencia || "Frequência não informada"}
+                      </p>
+                      <p className="muted">
+                        Horários: {m.horarios_uso || "não informados"} · {m.uso_se_necessario ? "Uso se necessário" : "Uso programado"}
                       </p>
                       <p className="muted">
                         Indicação: {m.indicacao || "não informada"} · Adesão:{" "}
                         {m.adesao_referida || "não informada"}
                       </p>
-                      {m.observacoes && <p className="muted">Observações: {m.observacoes}</p>}
+                      <p className="muted">
+                        Situação: <strong>{m.status_farmacoterapia || (m.ativo ? "EM_USO" : "INATIVO")}</strong>
+                        {m.motivo_status ? ` · Motivo: ${m.motivo_status}` : ""}
+                      </p>
+                      {podeRegistrarClinico() && (m.status_farmacoterapia || "EM_USO") === "EM_USO" && (
+                        <div className="inline-actions">
+                          <button className="secondary-button" type="button" onClick={() => abrirAcaoMedicamento(m, "TROCAR")}>Trocar</button>
+                          <button className="secondary-button" type="button" onClick={() => abrirAcaoMedicamento(m, "SUSPENDER")}>Suspender</button>
+                          <button className="secondary-button" type="button" onClick={() => abrirAcaoMedicamento(m, "ENCERRAR")}>Encerrar</button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
               )}
 
               {mostrarFormularioMedicamento && (
+
                 <div className="nested-form">
+                  <div className="form-grid">
+                    <input
+                      className="input"
+                      placeholder="Buscar no catálogo"
+                      value={buscaCatalogoMedicamento}
+                      onChange={(e) => setBuscaCatalogoMedicamento(e.target.value)}
+                      onBlur={() => carregarCatalogoMedicamentos(buscaCatalogoMedicamento)}
+                    />
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => carregarCatalogoMedicamentos(buscaCatalogoMedicamento)}
+                    >
+                      Buscar
+                    </button>
+                  </div>
+
+                  <select
+                    className="input"
+                    value={novoMedicamento.catalogo_medicamento_id}
+                    onChange={(e) => aplicarMedicamentoCatalogo(e.target.value)}
+                  >
+                    <option value="">Selecionar medicamento do catálogo</option>
+                    {catalogoMedicamentos.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.descricao_completa || `${m.farmaco} ${m.concentracao || ""}`}
+                      </option>
+                    ))}
+                  </select>
+
                   <input
                     className="input"
-                    placeholder="Nome do medicamento"
+                    placeholder="Nome manual, se não encontrado no catálogo"
                     value={novoMedicamento.nome_medicamento}
                     onChange={(e) =>
                       setNovoMedicamento({
@@ -1287,9 +2054,8 @@ async function concluirPlanoCuidado(plano) {
                       }
                     />
 
-                    <input
+                    <select
                       className="input"
-                      placeholder="Via"
                       value={novoMedicamento.via}
                       onChange={(e) =>
                         setNovoMedicamento({
@@ -1297,20 +2063,76 @@ async function concluirPlanoCuidado(plano) {
                           via: e.target.value,
                         })
                       }
+                    >
+                      <option value="">Via de administração</option>
+                      {(opcoesFarmacoterapia.vias_administracao || []).map((via) => (
+                        <option key={via} value={via}>{via}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-grid">
+                    <select
+                      className="input"
+                      value={novoMedicamento.frequencia_uso}
+                      onChange={(e) =>
+                        setNovoMedicamento({
+                          ...novoMedicamento,
+                          frequencia_uso: e.target.value,
+                          frequencia: e.target.value || novoMedicamento.frequencia,
+                        })
+                      }
+                    >
+                      <option value="">Frequência de uso</option>
+                      {(opcoesFarmacoterapia.frequencias_uso || []).map((freq) => (
+                        <option key={freq} value={freq}>{freq}</option>
+                      ))}
+                    </select>
+
+                    <input
+                      className="input"
+                      placeholder="Frequência livre, se necessário"
+                      value={novoMedicamento.frequencia}
+                      onChange={(e) =>
+                        setNovoMedicamento({
+                          ...novoMedicamento,
+                          frequencia: e.target.value,
+                        })
+                      }
                     />
                   </div>
 
-                  <input
+                  <select
                     className="input"
-                    placeholder="Frequência"
-                    value={novoMedicamento.frequencia}
+                    value={novoMedicamento.horarios_uso}
                     onChange={(e) =>
                       setNovoMedicamento({
                         ...novoMedicamento,
-                        frequencia: e.target.value,
+                        horarios_uso: e.target.value,
+                        uso_se_necessario: e.target.value === "se necessário" ? true : novoMedicamento.uso_se_necessario,
                       })
                     }
-                  />
+                  >
+                    <option value="">Horário principal ou orientação de uso</option>
+                    {(opcoesFarmacoterapia.horarios_padrao || []).map((horario) => (
+                      <option key={horario} value={horario}>{horario}</option>
+                    ))}
+                  </select>
+
+                  <label className="checkbox-line">
+                    <input
+                      type="checkbox"
+                      checked={novoMedicamento.uso_se_necessario}
+                      onChange={(e) =>
+                        setNovoMedicamento({
+                          ...novoMedicamento,
+                          uso_se_necessario: e.target.checked,
+                          frequencia_uso: e.target.checked ? "se necessário" : novoMedicamento.frequencia_uso,
+                        })
+                      }
+                    />
+                    Uso se necessário
+                  </label>
 
                   <input
                     className="input"
@@ -1359,6 +2181,96 @@ async function concluirPlanoCuidado(plano) {
                     disabled={salvandoMedicamento}
                   >
                     {salvandoMedicamento ? "Salvando..." : "Salvar medicamento"}
+                  </button>
+                </div>
+              )}
+
+              {medicamentoCicloVida && acaoCicloVidaMedicamento && (
+                <div className="nested-form">
+                  <div className="section-header-row">
+                    <div>
+                      <h4>
+                        {acaoCicloVidaMedicamento === "TROCAR" ? "Trocar medicamento" : acaoCicloVidaMedicamento === "SUSPENDER" ? "Suspender medicamento" : "Encerrar medicamento"}
+                      </h4>
+                      <p className="muted">{medicamentoCicloVida.nome_medicamento}</p>
+                    </div>
+                    <button className="secondary-button" type="button" onClick={fecharAcaoMedicamento}>Cancelar</button>
+                  </div>
+
+                  {acaoCicloVidaMedicamento === "TROCAR" && (
+                    <>
+                      <div className="form-grid">
+                        <input
+                          className="input"
+                          placeholder="Buscar substituto no catálogo"
+                          value={buscaCatalogoMedicamentoSubstituto}
+                          onChange={(e) => setBuscaCatalogoMedicamentoSubstituto(e.target.value)}
+                        />
+                        <select
+                          className="input"
+                          value={medicamentoSubstituto.catalogo_medicamento_id}
+                          onChange={(e) => aplicarMedicamentoSubstitutoCatalogo(e.target.value)}
+                        >
+                          <option value="">Selecione o substituto no catálogo</option>
+                          {catalogoMedicamentos.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.descricao_completa || `${m.farmaco || m.principio_ativo || "Medicamento"} ${m.apresentacao || ""}`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="form-grid">
+                        <input
+                          className="input"
+                          placeholder="Medicamento não encontrado? Digite manualmente"
+                          value={medicamentoSubstituto.nome_medicamento}
+                          onChange={(e) => setMedicamentoSubstituto({ ...medicamentoSubstituto, catalogo_medicamento_id: "", nome_medicamento: e.target.value })}
+                        />
+                        <input className="input" placeholder="Dose" value={medicamentoSubstituto.dose} onChange={(e) => setMedicamentoSubstituto({ ...medicamentoSubstituto, dose: e.target.value })} />
+                        <select className="input" value={medicamentoSubstituto.via} onChange={(e) => setMedicamentoSubstituto({ ...medicamentoSubstituto, via: e.target.value })}>
+                          <option value="">Via</option>
+                          {(opcoesFarmacoterapia.vias_administracao || []).map((via) => <option key={via} value={via}>{via}</option>)}
+                        </select>
+                        <select className="input" value={medicamentoSubstituto.frequencia_uso} onChange={(e) => setMedicamentoSubstituto({ ...medicamentoSubstituto, frequencia_uso: e.target.value, frequencia: e.target.value })}>
+                          <option value="">Frequência</option>
+                          {(opcoesFarmacoterapia.frequencias_uso || []).map((freq) => <option key={freq} value={freq}>{freq}</option>)}
+                        </select>
+                      </div>
+                      <input className="input" placeholder="Horários de uso" value={medicamentoSubstituto.horarios_uso} onChange={(e) => setMedicamentoSubstituto({ ...medicamentoSubstituto, horarios_uso: e.target.value })} />
+                    </>
+                  )}
+
+                  <div className="form-grid">
+                    <input className="input" type="date" value={formCicloVidaMedicamento.data_evento} onChange={(e) => setFormCicloVidaMedicamento({ ...formCicloVidaMedicamento, data_evento: e.target.value })} />
+                    <select className="input" value={formCicloVidaMedicamento.motivo} onChange={(e) => setFormCicloVidaMedicamento({ ...formCicloVidaMedicamento, motivo: e.target.value })}>
+                      <option value="">Motivo</option>
+                      {((acaoCicloVidaMedicamento === "TROCAR" ? opcoesCicloVidaMedicamento.motivos_troca : acaoCicloVidaMedicamento === "SUSPENDER" ? opcoesCicloVidaMedicamento.motivos_suspensao : opcoesCicloVidaMedicamento.motivos_encerramento) || []).map((motivo) => (
+                        <option key={motivo} value={motivo}>{motivo}</option>
+                      ))}
+                    </select>
+                    {acaoCicloVidaMedicamento === "SUSPENDER" && (
+                      <select className="input" value={formCicloVidaMedicamento.tipo_suspensao} onChange={(e) => setFormCicloVidaMedicamento({ ...formCicloVidaMedicamento, tipo_suspensao: e.target.value })}>
+                        {(opcoesCicloVidaMedicamento.tipos_suspensao || []).map((tipo) => <option key={tipo} value={tipo}>{tipo}</option>)}
+                      </select>
+                    )}
+                  </div>
+
+                  <div className="form-grid">
+                    <select className="input" value={formCicloVidaMedicamento.prm_relacionado_id} onChange={(e) => setFormCicloVidaMedicamento({ ...formCicloVidaMedicamento, prm_relacionado_id: e.target.value })}>
+                      <option value="">Associar PRM (opcional)</option>
+                      {problemasFarmacoterapeuticos.map((p) => <option key={p.id} value={p.id}>{p.categoria || "PRM"} · {p.subcategoria || p.tipo || p.descricao}</option>)}
+                    </select>
+                    <select className="input" value={formCicloVidaMedicamento.intervencao_relacionada_id} onChange={(e) => setFormCicloVidaMedicamento({ ...formCicloVidaMedicamento, intervencao_relacionada_id: e.target.value })}>
+                      <option value="">Associar intervenção (opcional)</option>
+                      {intervencoesFarmacoterapia.map((i) => <option key={i.id} value={i.id}>{i.tipo_intervencao || i.tipo_padronizado || "Intervenção"}</option>)}
+                    </select>
+                  </div>
+
+                  <textarea className="textarea" placeholder="Observação clínica" value={formCicloVidaMedicamento.observacao} onChange={(e) => setFormCicloVidaMedicamento({ ...formCicloVidaMedicamento, observacao: e.target.value })} />
+
+                  <button className="primary-button" type="button" onClick={salvarCicloVidaMedicamento} disabled={salvandoCicloVidaMedicamento}>
+                    {salvandoCicloVidaMedicamento ? "Salvando..." : "Registrar alteração da farmacoterapia"}
                   </button>
                 </div>
               )}
@@ -1479,6 +2391,23 @@ async function concluirPlanoCuidado(plano) {
                   >
                     {mostrarFormularioIntervencao ? "Cancelar" : "Adicionar intervenção"}
                   </button>
+                )}
+              </div>
+
+              <div className="care-subsection">
+                <h4>Problemas relacionados à farmacoterapia</h4>
+                {problemasFarmacoterapeuticos.length === 0 ? (
+                  <p className="muted">Nenhum PRM estruturado registrado para este paciente.</p>
+                ) : (
+                  <div className="med-list compact">
+                    {problemasFarmacoterapeuticos.map((p) => (
+                      <div className="med-card" key={`prm-${p.id}`}>
+                        <strong>{traduzirStatus(p.tipo)}</strong>
+                        <p>{p.descricao || "Sem descrição."}</p>
+                        <p className="muted">Categoria: {p.categoria} · Gravidade: {p.gravidade} · Status: {traduzirStatus(p.status)}</p>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
 
@@ -1721,16 +2650,464 @@ async function concluirPlanoCuidado(plano) {
             </div>
             )}
 
+            {abaProntuario === "metas" && (
+              <div className="prontuario-tab-content">
+                <div className="form-card">
+                  <div className="section-header-row">
+                    <div>
+                      <h3>Metas terapêuticas e ações de acompanhamento</h3>
+                      <p className="muted">Use esta aba como plano operacional: meta é o resultado esperado; ação é a tarefa com responsável, prazo e status.</p>
+                    </div>
+                  </div>
+
+                  <div className="clinical-summary">
+                    <strong>Fluxo recomendado:</strong>
+                    <p>
+                      PRM identifica o problema; intervenção registra a conduta clínica; meta define o resultado a alcançar; ação do plano define quem fará, quando fará e como será acompanhado.
+                    </p>
+                  </div>
+
+                  <div className="dashboard-grid">
+                    <div className="form-card">
+                      <div className="section-header-row">
+                        <div>
+                          <h4>Metas terapêuticas</h4>
+                          <p className="muted">Registre metas vinculadas a PRM, intervenções e acompanhamento clínico.</p>
+                        </div>
+                        {podeRegistrarClinico() && (
+                          <button className="secondary-button" onClick={abrirNovaMeta}>
+                            Nova meta
+                          </button>
+                        )}
+                      </div>
+
+                      {mostrarFormularioMeta && (
+                        <div className="inline-form">
+                          <div className="form-grid two">
+                            <label>
+                              Categoria
+                              <select
+                                value={novaMeta.categoria}
+                                onChange={(e) => {
+                                  const categoria = e.target.value;
+                                  const primeiraSubcategoria = opcoesMetas.subcategorias?.[categoria]?.[0] || "OUTRA";
+                                  setNovaMeta({ ...novaMeta, categoria, subcategoria: primeiraSubcategoria });
+                                }}
+                              >
+                                {(opcoesMetas.categorias || []).map((cat) => (
+                                  <option key={cat} value={cat}>{traduzirStatus(cat)}</option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label>
+                              Subcategoria
+                              <select
+                                value={novaMeta.subcategoria}
+                                onChange={(e) => setNovaMeta({ ...novaMeta, subcategoria: e.target.value })}
+                              >
+                                {subcategoriasMetaAtual.map((sub) => (
+                                  <option key={sub} value={sub}>{traduzirStatus(sub)}</option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+
+                          <label>
+                            Descrição clínica da meta
+                            <textarea
+                              className="textarea"
+                              placeholder="Ex.: Reduzir PA para meta individualizada em até 90 dias"
+                              value={novaMeta.descricao}
+                              onChange={(e) => setNovaMeta({ ...novaMeta, descricao: e.target.value })}
+                            />
+                          </label>
+
+                          <div className="form-grid three">
+                            <label>
+                              Valor atual
+                              <input
+                                value={novaMeta.valor_atual}
+                                onChange={(e) => setNovaMeta({ ...novaMeta, valor_atual: e.target.value })}
+                                placeholder="Ex.: 150/90"
+                              />
+                            </label>
+                            <label>
+                              Valor alvo
+                              <input
+                                value={novaMeta.valor_alvo}
+                                onChange={(e) => setNovaMeta({ ...novaMeta, valor_alvo: e.target.value })}
+                                placeholder="Ex.: 130/80"
+                              />
+                            </label>
+                            <label>
+                              Unidade
+                              <select
+                                value={novaMeta.unidade}
+                                onChange={(e) => setNovaMeta({ ...novaMeta, unidade: e.target.value })}
+                              >
+                                <option value="">Selecionar</option>
+                                {(opcoesMetas.unidades || []).map((unidade) => (
+                                  <option key={unidade} value={unidade}>{unidade}</option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+
+                          <div className="form-grid three">
+                            <label>
+                              Data inicial
+                              <input
+                                type="date"
+                                value={novaMeta.data_inicial}
+                                onChange={(e) => setNovaMeta({ ...novaMeta, data_inicial: e.target.value })}
+                              />
+                            </label>
+                            <label>
+                              Prazo previsto
+                              <input
+                                type="date"
+                                value={novaMeta.data_prevista}
+                                onChange={(e) => setNovaMeta({ ...novaMeta, data_prevista: e.target.value })}
+                              />
+                            </label>
+                            <label>
+                              Data de conclusão
+                              <input
+                                type="date"
+                                value={novaMeta.data_conclusao}
+                                onChange={(e) => setNovaMeta({ ...novaMeta, data_conclusao: e.target.value })}
+                              />
+                            </label>
+                          </div>
+
+                          <div className="form-grid two">
+                            <label>
+                              Status
+                              <select
+                                value={novaMeta.status}
+                                onChange={(e) => setNovaMeta({ ...novaMeta, status: e.target.value })}
+                              >
+                                {(opcoesMetas.status || []).map((status) => (
+                                  <option key={status} value={status}>{traduzirStatus(status)}</option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label>
+                              Origem
+                              <select
+                                value={novaMeta.origem}
+                                onChange={(e) => setNovaMeta({ ...novaMeta, origem: e.target.value })}
+                              >
+                                {(opcoesMetas.origens || []).map((origem) => (
+                                  <option key={origem} value={origem}>{traduzirStatus(origem)}</option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+
+                          <div className="form-grid two">
+                            <label>
+                              Vincular a PRM
+                              <select
+                                value={novaMeta.prm_id}
+                                onChange={(e) => setNovaMeta({ ...novaMeta, prm_id: e.target.value })}
+                              >
+                                <option value="">Não vincular</option>
+                                {problemasFarmacoterapeuticos.map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    #{p.id} · {traduzirStatus(p.categoria || p.tipo_problema || "PRM")} · {p.descricao || p.problema || "sem descrição"}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label>
+                              Vincular a intervenção
+                              <select
+                                value={novaMeta.intervencao_farmacoterapia_id}
+                                onChange={(e) => setNovaMeta({ ...novaMeta, intervencao_farmacoterapia_id: e.target.value })}
+                              >
+                                <option value="">Não vincular</option>
+                                {intervencoesFarmacoterapia.map((i) => (
+                                  <option key={i.id} value={i.id}>
+                                    #{i.id} · {traduzirStatus(i.tipo_intervencao || "intervenção")} · {i.descricao || i.conduta || "sem descrição"}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+
+                          <div className="button-row">
+                            <button
+                              className="primary-button"
+                              onClick={salvarMetaTerapeutica}
+                              disabled={salvandoMeta}
+                            >
+                              {salvandoMeta ? "Salvando..." : metaEditandoId ? "Atualizar meta" : "Salvar meta"}
+                            </button>
+                            <button
+                              className="secondary-button"
+                              onClick={() => {
+                                resetarFormularioMeta();
+                                setMostrarFormularioMeta(false);
+                              }}
+                              disabled={salvandoMeta}
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {metasTerapeuticas.length === 0 ? (
+                        <p className="muted">Nenhuma meta terapêutica estruturada registrada.</p>
+                      ) : (
+                        <div className="med-list compact">
+                          {metasTerapeuticas.map((m) => (
+                            <div className="med-card" key={`meta-${m.id}`}>
+                              <div className="section-header-row">
+                                <div>
+                                  <strong>{traduzirStatus(m.subcategoria || m.parametro || m.categoria)}</strong>
+                                  <p>{m.descricao}</p>
+                                  <p className="muted">
+                                    Categoria: {traduzirStatus(m.categoria)} · Alvo: {m.valor_alvo || "—"} {m.unidade || ""} · Status: {traduzirStatus(m.status)}
+                                  </p>
+                                  {(m.data_prevista || m.prazo) && <p className="muted">Prazo: {String(m.data_prevista || m.prazo).slice(0, 10)}</p>}
+                                </div>
+                                {podeRegistrarClinico() && (
+                                  <button className="secondary-button" onClick={() => iniciarEdicaoMeta(m)}>Editar</button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="form-card">
+                      <div className="section-header-row">
+                        <div>
+                          <h4>Ações do plano</h4>
+                          <p className="muted">Transforme metas e intervenções em tarefas acompanháveis, com responsável, prazo e status.</p>
+                        </div>
+                        {podeRegistrarClinico() && (
+                          <button className="secondary-button" onClick={abrirNovaAcaoPlano}>
+                            Nova ação
+                          </button>
+                        )}
+                      </div>
+
+                      {mostrarFormularioAcao && (
+                        <div className="nested-form">
+                          <div className="form-grid three">
+                            <label>
+                              Tipo da ação
+                              <select
+                                value={novaAcaoPlano.tipo_acao}
+                                onChange={(e) => setNovaAcaoPlano({ ...novaAcaoPlano, tipo_acao: e.target.value })}
+                              >
+                                {(opcoesPlanoCuidado.tipos_acao || []).map((tipo) => (
+                                  <option key={tipo} value={tipo}>{traduzirStatus(tipo)}</option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label>
+                              Responsável
+                              <select
+                                value={novaAcaoPlano.responsavel}
+                                onChange={(e) => setNovaAcaoPlano({ ...novaAcaoPlano, responsavel: e.target.value })}
+                              >
+                                {(opcoesPlanoCuidado.responsaveis || []).map((resp) => (
+                                  <option key={resp} value={resp}>{traduzirStatus(resp)}</option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label>
+                              Prazo
+                              <input
+                                type="date"
+                                value={novaAcaoPlano.prazo}
+                                onChange={(e) => setNovaAcaoPlano({ ...novaAcaoPlano, prazo: e.target.value })}
+                              />
+                            </label>
+
+                            <label>
+                              Prioridade
+                              <select
+                                value={novaAcaoPlano.prioridade}
+                                onChange={(e) => setNovaAcaoPlano({ ...novaAcaoPlano, prioridade: e.target.value })}
+                              >
+                                {(opcoesPlanoCuidado.prioridades || []).map((p) => (
+                                  <option key={p} value={p}>{traduzirStatus(p)}</option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label>
+                              Status
+                              <select
+                                value={novaAcaoPlano.status}
+                                onChange={(e) => setNovaAcaoPlano({ ...novaAcaoPlano, status: e.target.value })}
+                              >
+                                {(opcoesPlanoCuidado.status_acao || []).map((status) => (
+                                  <option key={status} value={status}>{traduzirStatus(status)}</option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label>
+                              Vincular a PRM
+                              <select
+                                value={novaAcaoPlano.problema_id}
+                                onChange={(e) => setNovaAcaoPlano({ ...novaAcaoPlano, problema_id: e.target.value })}
+                              >
+                                <option value="">Não vincular</option>
+                                {problemasFarmacoterapeuticos.map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    #{p.id} · {traduzirStatus(p.categoria)} · {traduzirStatus(p.tipo)}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label>
+                              Vincular a meta
+                              <select
+                                value={novaAcaoPlano.meta_id}
+                                onChange={(e) => setNovaAcaoPlano({ ...novaAcaoPlano, meta_id: e.target.value })}
+                              >
+                                <option value="">Não vincular</option>
+                                {metasTerapeuticas.map((m) => (
+                                  <option key={m.id} value={m.id}>
+                                    #{m.id} · {traduzirStatus(m.subcategoria || m.parametro || m.categoria)}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label>
+                              Vincular a intervenção
+                              <select
+                                value={novaAcaoPlano.intervencao_farmacoterapia_id}
+                                onChange={(e) => setNovaAcaoPlano({ ...novaAcaoPlano, intervencao_farmacoterapia_id: e.target.value })}
+                              >
+                                <option value="">Não vincular</option>
+                                {intervencoesFarmacoterapia.map((i) => (
+                                  <option key={i.id} value={i.id}>
+                                    #{i.id} · {traduzirStatus(i.tipo_intervencao || "intervenção")}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+
+                          <label>
+                            Descrição da ação
+                            <textarea
+                              rows={3}
+                              value={novaAcaoPlano.descricao}
+                              onChange={(e) => setNovaAcaoPlano({ ...novaAcaoPlano, descricao: e.target.value })}
+                              placeholder="Ex.: orientar técnica inalatória e reavaliar adesão em 30 dias"
+                            />
+                          </label>
+
+                          <label>
+                            Resultado/observação da ação
+                            <textarea
+                              rows={2}
+                              value={novaAcaoPlano.resultado}
+                              onChange={(e) => setNovaAcaoPlano({ ...novaAcaoPlano, resultado: e.target.value })}
+                              placeholder="Preencher ao acompanhar ou concluir a ação"
+                            />
+                          </label>
+
+                          <div className="button-row">
+                            <button className="primary-button" onClick={salvarAcaoPlanoCuidado} disabled={salvandoAcao}>
+                              {salvandoAcao ? "Salvando..." : acaoEditandoId ? "Atualizar ação" : "Salvar ação"}
+                            </button>
+                            <button
+                              className="secondary-button"
+                              onClick={() => {
+                                resetarFormularioAcaoPlano();
+                                setMostrarFormularioAcao(false);
+                              }}
+                              disabled={salvandoAcao}
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {acoesPlanoCuidado.length === 0 ? (
+                        <p className="muted">Nenhuma ação estruturada registrada.</p>
+                      ) : (
+                        <div className="med-list compact">
+                          {acoesPlanoCuidado.map((a) => (
+                            <div className="med-card" key={`acao-${a.id}`}>
+                              <div className="section-header-row">
+                                <div>
+                                  <strong>{traduzirStatus(a.tipo_acao)}</strong>
+                                  <p>{a.descricao}</p>
+                                  <p className="muted">Responsável: {traduzirStatus(a.responsavel || "NAO_INFORMADO")} · Prioridade: {traduzirStatus(a.prioridade || "NORMAL")} · Status: {traduzirStatus(a.status)}</p>
+                                  {a.prazo && <p className="muted">Prazo: {String(a.prazo).slice(0, 10)}</p>}
+                                  {a.resultado && <p className="muted">Resultado: {a.resultado}</p>}
+                                </div>
+                                {podeRegistrarClinico() && (
+                                  <button className="secondary-button" onClick={() => iniciarEdicaoAcaoPlano(a)}>Atualizar</button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {abaProntuario === "plano" && (
               <div className="prontuario-tab-content">
                 <div className="form-card">
                   <div className="section-header">
                     <div>
-                      <h3>Plano de cuidado farmacêutico</h3>
+                      <h3>Plano narrativo do cuidado</h3>
                       <p className="muted">
-                        Registre objetivos, intervenções planejadas, prazos e resultados do acompanhamento.
+                        Use esta aba para uma síntese clínica complementar. O plano operacional estruturado deve ser registrado em “Metas e ações”.
                       </p>
                     </div>
+
+                    <div className="clinical-summary">
+                      <strong>Relação com as etapas anteriores</strong>
+                      <p>
+                        O plano narrativo deve sintetizar o raciocínio clínico construído nas etapas anteriores,
+                        sem substituir os registros estruturados de PRM, intervenções, metas e ações.
+                      </p>
+                      <div className="cards-grid four">
+                        <button className="metric-card" onClick={() => setAbaProntuario("intervencoes")}>
+                          <span>PRM / Intervenções</span>
+                          <strong>{problemasFarmacoterapeuticos.length + intervencoesFarmacoterapia.length}</strong>
+                        </button>
+                        <button className="metric-card" onClick={() => setAbaProntuario("metas")}>
+                          <span>Metas</span>
+                          <strong>{metasTerapeuticas.length}</strong>
+                        </button>
+                        <button className="metric-card" onClick={() => setAbaProntuario("metas")}>
+                          <span>Ações</span>
+                          <strong>{acoesPlanoCuidado.length}</strong>
+                        </button>
+                        <button className="metric-card" onClick={() => setAbaProntuario("evolucoes")}>
+                          <span>Evoluções</span>
+                          <strong>{linhaTempoClinica.filter((evento) => ["evolucao_clinica", "evolucao", "desfecho_clinico", "desfecho"].includes(evento.tipo)).length}</strong>
+                        </button>
+                      </div>
+                    </div>
+
                     {sugestoesPlano && (
                       <div className="form-card">
                         <h3>Sugestões para o Plano de Cuidado</h3>
@@ -2308,12 +3685,23 @@ async function concluirPlanoCuidado(plano) {
                 <div className="form-card">
                   <div className="section-header-row">
                     <div>
-                      <h3>Linha do tempo clínica</h3>
+                      <h3>Timeline única do cuidado</h3>
                       <p className="muted">
-                        Registro cronológico das evoluções, intervenções, desfechos e farmacoterapia.
+                        Jornada longitudinal do paciente reunindo CEAF, agenda, documentos, OCR, consultório, PRM, intervenções, metas, plano e desfechos.
                       </p>
                     </div>
                   </div>
+
+                  {categoriasTimelineUnificada.length > 0 && (
+                    <div className="timeline-summary-grid">
+                      {categoriasTimelineUnificada.map(([categoria, total]) => (
+                        <div className="timeline-summary-card" key={categoria}>
+                          <span>{traduzirTipoEvento(categoria)}</span>
+                          <strong>{total}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {linhaTempoClinica.length === 0 ? (
                     <p className="muted">Nenhum evento clínico registrado.</p>
@@ -2321,7 +3709,7 @@ async function concluirPlanoCuidado(plano) {
                     <div className="clinical-timeline">
                       {linhaTempoClinica.map((evento, index) => (
                         <div
-                          className={`clinical-timeline-item ${evento.tipo}`}
+                          className={`clinical-timeline-item ${evento.categoria || evento.tipo}`}
                           key={`${evento.tipo}-${evento.data || index}-${index}`}
                         >
                           <div className="clinical-timeline-marker" />
@@ -2338,14 +3726,11 @@ async function concluirPlanoCuidado(plano) {
                             </div>
 
                             <div className="clinical-timeline-icon">
-                              {["evolucao_clinica", "evolucao"].includes(evento.tipo) && "🩺"}
-                              {["intervencao_farmacoterapeutica", "intervencao"].includes(evento.tipo) && "💊"}
-                              {["desfecho_clinico", "desfecho", "desfecho_intervencao"].includes(evento.tipo) && "📈"}
-                              {["farmacoterapia", "medicamento"].includes(evento.tipo) && "📋"}
+                              {iconeTimeline(evento)}
                             </div>
 
                             <span className="clinical-timeline-type">
-                              {traduzirTipoEvento(evento.tipo)}
+                              {traduzirTipoEvento(evento.categoria || evento.tipo)} · {traduzirTipoEvento(evento.tipo)}
                             </span>
 
                             {evento.descricao && <p>{evento.descricao}</p>}
@@ -2383,45 +3768,64 @@ async function concluirPlanoCuidado(plano) {
       <h2>Consultório Farmacêutico</h2>
 
       <p className="muted">
-        Pacientes clínicos, prontuário, evolução, desfechos, farmacoterapia e timeline.
+        Centro de Atenção, pacientes clínicos, farmacoterapia, PRM, intervenções, metas, plano de cuidado e timeline em um único workspace.
       </p>
 
-      {loading ? (
-        <p>Carregando pacientes...</p>
-      ) : (
-        <div className="table-card">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Nome</th>
-                <th>Idade</th>
-                <th>Sexo</th>
-                <th>Bairro</th>
-                <th>Ação</th>
-              </tr>
-            </thead>
+      <div className="tabs">
+        <button
+          className={abaConsultorio === "centro" ? "active" : ""}
+          onClick={() => setAbaConsultorio("centro")}
+        >
+          Centro de Atenção
+        </button>
+        <button
+          className={abaConsultorio === "pacientes" ? "active" : ""}
+          onClick={() => setAbaConsultorio("pacientes")}
+        >
+          Pacientes e Prontuários
+        </button>
+      </div>
 
-            <tbody>
-              {pacientes.map((p) => (
-                <tr key={p.id}>
-                  <td>{p.nome}</td>
-                  <td>{p.idade || "—"}</td>
-                  <td>{p.sexo || "—"}</td>
-                  <td>{p.bairro || "—"}</td>
-                  <td>
-                    <button className="primary-button" onClick={() => abrirProntuario(p)}>
-                      Abrir prontuário
-                    </button>
-                  </td>
+      {abaConsultorio === "centro" && <CuidadoFarmaceutico />}
+
+      {abaConsultorio === "pacientes" && (
+        loading ? (
+          <p>Carregando pacientes...</p>
+        ) : (
+          <div className="table-card">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Nome</th>
+                  <th>Idade</th>
+                  <th>Sexo</th>
+                  <th>Bairro</th>
+                  <th>Ação</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
 
-          {pacientes.length === 0 && (
-            <p className="muted table-empty">Nenhum paciente encontrado.</p>
-          )}
-        </div>
+              <tbody>
+                {pacientes.map((p) => (
+                  <tr key={p.id}>
+                    <td>{p.nome}</td>
+                    <td>{p.idade || "—"}</td>
+                    <td>{p.sexo || "—"}</td>
+                    <td>{p.bairro || "—"}</td>
+                    <td>
+                      <button className="primary-button" onClick={() => abrirProntuario(p)}>
+                        Abrir prontuário
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {pacientes.length === 0 && (
+              <p className="muted table-empty">Nenhum paciente encontrado.</p>
+            )}
+          </div>
+        )
       )}
     </div>
   );

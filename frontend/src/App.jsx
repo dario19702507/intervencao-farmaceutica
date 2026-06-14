@@ -1,19 +1,19 @@
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { api } from "./api/api";
 import MainLayout from "./components/layout/MainLayout";
-import Dashboard from "./pages/dashboard/Dashboard";
-import ServicosRapidos from "./pages/servicos/ServicosRapidos";
-import Consultorio from "./pages/consultorio/Consultorio";
-import AgendaAlertas from "./pages/agenda/AgendaAlertas";
-import Relatorios from "./pages/relatorios/Relatorios";
-import Login from "./pages/Login";
+import AppRoute from "./components/router/AppRoute";
+import RequireAuth from "./components/router/RequireAuth";
+import { LEGACY_REDIRECTS, ROUTES } from "./navigation/catalog.jsx";
 import "./style.css";
-import FilaClinica from "./pages/fila/FilaClinica";
-import DashboardEpidemiologico from "./pages/dashboard/DashboardEpidemiologico";
-import PerfilProfissional from "./pages/perfil/PerfilProfissional";
-import IndicadoresCientificos from "./pages/cientifico/IndicadoresCientificos.jsx";
-import AgendaIntegrada from "./pages/agenda/AgendaIntegrada";
-import Pacientes from "./pages/pacientes/Pacientes";
+
+function LoadingPage() {
+  return (
+    <div className="loading-page">
+      <div className="loading-card">Carregando módulo...</div>
+    </div>
+  );
+}
 
 export default function App() {
   const [usuario, setUsuario] = useState(() => {
@@ -21,13 +21,11 @@ export default function App() {
     const email = localStorage.getItem("usuario_email");
 
     if (token && email) {
-      return { email };
+      return { email, perfil: "carregando", categoria_profissional: "carregando" };
     }
 
     return null;
   });
-
-  const [activePage, setActivePage] = useState("dashboard");
 
   useEffect(() => {
     async function carregarUsuarioLogado() {
@@ -36,7 +34,7 @@ export default function App() {
       if (!token) return;
 
       try {
-        const response = await api.get("/consultorio/me");
+        const response = await api.get("/me");
 
         setUsuario({
           email: response.data.email,
@@ -61,45 +59,31 @@ export default function App() {
     setUsuario(null);
   }
 
-  const renderPage = () => {
-    switch (activePage) {
-      case "servicos":
-        return <ServicosRapidos setActivePage={setActivePage} />;
-      case "consultorio":
-        return <Consultorio usuario={usuario} />;
-      case "agenda":
-        return <AgendaAlertas />;
-      case "agenda-integrada":
-        return <AgendaIntegrada />;
-      case "pacientes":
-        return <Pacientes />;
-      case "relatorios":
-        return <Relatorios />;
-      case "fila-clinica":
-        return <FilaClinica setActivePage={setActivePage} />;
-      case "dashboard-epidemiologico":
-        return <DashboardEpidemiologico />;
-      case "perfil-profissional":
-        return <PerfilProfissional />;
-      case "indicadores-cientificos":
-        return <IndicadoresCientificos />;  
-      default:
-        return <Dashboard setActivePage={setActivePage} />;
-    }
-  };
-
-  if (!usuario) {
-    return <Login onLogin={setUsuario} />;
-  }
-
   return (
-    <MainLayout
-      activePage={activePage}
-      setActivePage={setActivePage}
-      usuario={usuario}
-      sair={sair}
-    >
-      {renderPage()}
-    </MainLayout>
-  )  
+    <RequireAuth usuario={usuario} setUsuario={setUsuario}>
+      <MainLayout usuario={usuario} sair={sair}>
+        <Suspense fallback={<LoadingPage />}>
+          <Routes>
+            {ROUTES.map((route) => (
+              <Route
+                key={route.key}
+                path={route.path}
+                element={<AppRoute route={route} usuario={usuario} />}
+              />
+            ))}
+
+            {LEGACY_REDIRECTS.map((redirect) => (
+              <Route
+                key={`${redirect.from}->${redirect.to}`}
+                path={redirect.from}
+                element={<Navigate to={redirect.to} replace />}
+              />
+            ))}
+
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
+      </MainLayout>
+    </RequireAuth>
+  );
 }

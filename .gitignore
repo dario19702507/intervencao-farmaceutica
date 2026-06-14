@@ -1,16 +1,37 @@
 # Python
-venv/
 __pycache__/
-*.pyc
+*.py[cod]
 *.db
+*.sqlite
+*.sqlite3
+venv/
+.venv/
 .env
+.env.*
+!.env.example
 
-# Node
+# Node/Vite
 node_modules/
 dist/
-.env.local
-.env
+build/
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
 
-# Sistema
+# OS/editor
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log
+*.bak
+*Copia*
+*Cópia*
+
+# Backups gerados em execução
+backups/
+!backup_database.py
+!restore_database.py
+!README_BACKUP.md

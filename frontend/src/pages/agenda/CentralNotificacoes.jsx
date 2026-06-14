@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../../api";
+import { api } from "../../api/api";
 
 function normalizarStatus(valor) {
   return (valor || "").toString().trim().toLowerCase();

@@ -383,7 +383,6 @@ def historico_paciente_mestre(
 
 
 # Rotas mantidas por compatibilidade com AgendaIntegrada.jsx
-@router.post("/agenda/pacientes")
 def criar_paciente_agenda(
     dados: PacienteAgendaCreate,
     db: Session = Depends(get_db_consultorio),
@@ -434,7 +433,6 @@ def criar_paciente_agenda(
     }
 
 
-@router.get("/agenda/pacientes")
 def listar_pacientes_agenda(
     ativo: Optional[bool] = True,
     db: Session = Depends(get_db_consultorio),
@@ -455,7 +453,6 @@ def listar_pacientes_agenda(
     }
 
 
-@router.get("/agenda/pacientes/buscar")
 def buscar_pacientes_agenda(
     termo: str,
     db: Session = Depends(get_db_consultorio),
@@ -489,7 +486,6 @@ def buscar_pacientes_agenda(
     }
 
 
-@router.put("/agenda/pacientes/{paciente_id}")
 def atualizar_paciente_agenda(
     paciente_id: int,
     dados: PacienteAgendaUpdate,

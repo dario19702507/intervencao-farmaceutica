@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api } from "../../api";
+import { api } from "../../api/api";
 import "./AgendaIntegrada.css";
 import CentralNotificacoes from "./CentralNotificacoes";
 

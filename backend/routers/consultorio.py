@@ -1,6 +1,4 @@
 from io import BytesIO
-from dotenv import load_dotenv
-load_dotenv()
 from fastapi.responses import StreamingResponse
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -10,25 +8,139 @@ import os
 from sqlalchemy import text
 from datetime import datetime, date, timedelta
 from typing import Optional
-from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String, Date, DateTime, Text, ForeignKey, Boolean, Float, func
+from sqlalchemy import Column, Integer, String, Date, DateTime, Text, ForeignKey, Boolean, Float, func
 from collections import defaultdict
 from openpyxl import Workbook
-from sqlalchemy.orm import declarative_base, sessionmaker, Session, relationship
-SECRET_KEY = os.getenv("SECRET_KEY", "troque-esta-chave-em-producao")
-ALGORITHM = os.getenv("ALGORITHM", "HS256")
+from sqlalchemy.orm import declarative_base, Session, relationship
+from database import engine, SessionLocal
+from auth import ALGORITHM, SECRET_KEY, oauth2_scheme
+from permissions import (
+    exigir_autenticado as perm_exigir_autenticado,
+    exigir_pode_registrar as perm_exigir_pode_registrar,
+    exigir_farmaceutico_ou_admin as perm_exigir_farmaceutico_ou_admin,
+    exigir_admin as perm_exigir_admin,
+)
+from models.consultorio_models import (
+    BaseConsultorio,
+    PacienteSimplificado,
+    AtendimentoRapido,
+    AfericaoPA,
+    GlicemiaCapilar,
+    Bioimpedancia,
+    PicoFluxo,
+    PacienteClinico,
+    PlanoCuidado,
+    ProntuarioClinico,
+    EvolucaoClinica,
+    DesfechoClinico,
+    MedicamentoUso,
+    IntervencaoFarmacoterapia,
+    DesfechoIntervencaoFarmacoterapia,
+    EvolucaoFarmaceutica,
+    UserConsultorio,
+    ResolucaoAlertaClinico,
+    CapacidadeAgenda,
+    NotificacaoAgenda,
+    PacienteAgenda,
+    AgendaIntegrada,
+    CatalogoMedicamento,
+)
+from schemas.consultorio_schemas import (
+    PacienteSimplificadoCreate,
+    AtendimentoRapidoCreate,
+    AfericaoPACreate,
+    GlicemiaCapilarCreate,
+    BioimpedanciaCreate,
+    PicoFluxoCreate,
+    ConversaoClinicoCreate,
+    PacienteClinicoIdentificacaoUpdate,
+    PacienteClinicoDadosClinicosUpdate,
+    EvolucaoClinicaCreate,
+    DesfechoClinicoCreate,
+    MedicamentoUsoCreate,
+    IntervencaoFarmacoterapiaCreate,
+    DesfechoIntervencaoFarmacoterapiaCreate,
+    EvolucaoFarmaceuticaCreate,
+    ResolucaoAlertaClinicoCreate,
+    PlanoCuidadoCreate,
+    PlanoCuidadoUpdate,
+    PlanoCuidadoConclusao,
+    AgendaIntegradaCreate,
+    AgendaIntegradaUpdate,
+    AgendaStatusUpdate,
+    CapacidadeAgendaCreate,
+    CapacidadeAgendaUpdate,
+    NotificacaoAgendaUpdate,
+    PacienteAgendaCreate,
+    PacienteAgendaUpdate,
+)
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+from services.consultorio_helpers import (
+    calcular_idade,
+    classificar_imc,
+    classificar_gordura_visceral,
+    calcular_bioimpedancia,
+    calcular_risco_populacional,
+    definir_prioridade,
+    gerar_sugestao_conduta,
+    dashboard_vazio,
+    calcular_percentual,
+    classificar_pa,
+    classificar_glicemia,
+    classificar_pico_fluxo,
+)
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./intervencoes.db")
-connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+from services.agenda_notificacoes import (
+    obter_ou_criar_paciente_agenda,
+    calcular_capacidade_agenda,
+    criar_proxima_dispensacao_automatica,
+    gerar_alertas_renovacao_laudo,
+    gerar_alertas_risco_interrupcao,
+    gerar_notificacoes_agenda,
+)
+from services.agenda_inteligente import (
+    data_tem_atendimento,
+    ajustar_para_proximo_dia_atendimento,
+    horarios_do_dia,
+)
 
-engine = create_engine(DATABASE_URL, connect_args=connect_args)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-BaseConsultorio = declarative_base()
+from services.auditoria import registrar_auditoria
+from services.indicadores_consultorio import (
+    montar_dashboard_servicos,
+    montar_triagem_risco,
+)
+
+from services.farmacoterapia import (
+    montar_avaliacao_polifarmacia,
+    montar_evolucao_farmacoterapeutica,
+    montar_sugestoes_plano_cuidado,
+    montar_dashboard_farmacoterapeutico,
+)
+
+from services.relatorios_consultorio import (
+    svc_gerar_declaracao_pdf,
+    svc_laudo_bioimpedancia_pdf,
+    svc_relatorio_mensal_consultorio,
+    svc_gerar_pdf_prontuario,
+    svc_evolucao_farmaceutica_pdf,
+    svc_plano_cuidado_pdf,
+    svc_evolucoes_clinicas_pdf,
+    svc_orientacoes_farmaceuticas_pdf,
+)
+
+from services.alertas_clinicos import (
+    svc_alertas_pendentes,
+    svc_alertas_clinicos_consolidados,
+    svc_resolver_alerta_clinico,
+    svc_listar_resolucoes_alertas_clinicos,
+    svc_dashboard_resolucao_alertas,
+    svc_relatorio_resolucao_alertas_pdf,
+    svc_dashboard_serie_temporal,
+    svc_classificacao_risco_populacional,
+)
+
 
 
 def get_db_consultorio():
@@ -38,823 +150,83 @@ def get_db_consultorio():
     finally:
         db.close()
 
-class PacienteSimplificado(BaseConsultorio):
-    __tablename__ = "pacientes_simplificados"
 
-    id = Column(Integer, primary_key=True, index=True)
-    paciente_agenda_id = Column(Integer, nullable=True)
-    nome = Column(String, nullable=False, index=True)
-    data_nascimento = Column(Date, nullable=True)
-    idade = Column(Integer, nullable=True)
-    sexo = Column(String, nullable=True)
-    telefone = Column(String, nullable=True)
-    bairro = Column(String, nullable=True)
-    observacoes = Column(Text, nullable=True)
-    criado_em = Column(DateTime, default=datetime.utcnow)
-
-
-class AtendimentoRapido(BaseConsultorio):
-    __tablename__ = "atendimentos_rapidos"
-
-    id = Column(Integer, primary_key=True, index=True)
-    paciente_simplificado_id = Column(Integer, ForeignKey("pacientes_simplificados.id"), nullable=False)
-    tipo_servico = Column(String, nullable=False)
-    data_atendimento = Column(DateTime, default=datetime.utcnow)
-    observacoes = Column(Text, nullable=True)
-    convertido_para_consultorio = Column(Boolean, default=False)
-
-
-class AfericaoPA(BaseConsultorio):
-    __tablename__ = "afericoes_pa"
-
-    id = Column(Integer, primary_key=True, index=True)
-    atendimento_rapido_id = Column(Integer, ForeignKey("atendimentos_rapidos.id"), nullable=False)
-    pressao_sistolica = Column(Integer, nullable=False)
-    pressao_diastolica = Column(Integer, nullable=False)
-    frequencia_cardiaca = Column(Integer, nullable=True)
-    posicao_paciente = Column(String, nullable=True)
-    braco_medido = Column(String, nullable=True)
-    classificacao = Column(String, nullable=True)
-    observacoes = Column(Text, nullable=True)
-
-
-class GlicemiaCapilar(BaseConsultorio):
-    __tablename__ = "glicemias_capilares"
-
-    id = Column(Integer, primary_key=True, index=True)
-    atendimento_rapido_id = Column(Integer, ForeignKey("atendimentos_rapidos.id"), nullable=False)
-    valor_glicemia = Column(Integer, nullable=False)
-    tipo_jejum = Column(String, nullable=True)
-    classificacao = Column(String, nullable=True)
-    observacoes = Column(Text, nullable=True)
-
-
-class Bioimpedancia(BaseConsultorio):
-    __tablename__ = "bioimpedancias"
-
-    id = Column(Integer, primary_key=True, index=True)
-    atendimento_rapido_id = Column(Integer, ForeignKey("atendimentos_rapidos.id"), nullable=False)
-
-    peso = Column(Float, nullable=True)
-    altura = Column(Float, nullable=True)
-    imc = Column(Float, nullable=True)
-    classificacao_imc = Column(String, nullable=True)
-
-    percentual_gordura = Column(Float, nullable=True)
-    massa_gordura_kg = Column(Float, nullable=True)
-
-    percentual_massa_muscular = Column(Float, nullable=True)
-    massa_muscular_kg = Column(Float, nullable=True)
-
-    massa_magra_kg = Column(Float, nullable=True)
-
-    gordura_visceral = Column(Float, nullable=True)
-    classificacao_gordura_visceral = Column(String, nullable=True)
-
-    metabolismo_basal = Column(Float, nullable=True)
-    fator_atividade = Column(Float, nullable=True)
-    gasto_energetico_total = Column(Float, nullable=True)
-
-    idade_corporal = Column(Integer, nullable=True)
-    diferenca_idade_corporal = Column(Integer, nullable=True)
-
-    fmi = Column(Float, nullable=True)
-    ffmi = Column(Float, nullable=True)
-    relacao_gordura_musculo = Column(Float, nullable=True)
-
-    risco_cardiometabolico = Column(String, nullable=True)
-    alertas = Column(Text, nullable=True)
-
-    classificacao = Column(String, nullable=True)
-    observacoes = Column(Text, nullable=True)
-
-class PicoFluxo(BaseConsultorio):
-    __tablename__ = "picos_fluxo"
-
-    id = Column(Integer, primary_key=True, index=True)
-    atendimento_rapido_id = Column(Integer, ForeignKey("atendimentos_rapidos.id"), nullable=False)
-    valor_medido = Column(Integer, nullable=False)
-    valor_previsto = Column(Integer, nullable=True)
-    percentual_previsto = Column(Float, nullable=True)
-    classificacao = Column(String, nullable=True)
-    observacoes = Column(Text, nullable=True)
-
-class PacienteClinico(BaseConsultorio):
-    __tablename__ = "pacientes_clinicos"
-
-    id = Column(Integer, primary_key=True, index=True)
-    nome = Column(String, nullable=False, index=True)
-    data_nascimento = Column(Date, nullable=True)
-    idade = Column(Integer, nullable=True)
-    sexo = Column(String, nullable=True)
-    telefone = Column(String, nullable=True)
-    bairro = Column(String, nullable=True)
-    endereco = Column(Text, nullable=True)
-    cpf = Column(String, nullable=True)
-    cns = Column(String, nullable=True)
-    nome_mae = Column(String, nullable=True)
-    origem = Column(String, default="conversao_servico_rapido")
-    paciente_simplificado_origem_id = Column(Integer, ForeignKey("pacientes_simplificados.id"), nullable=True)
-    paciente_agenda_id = Column(Integer, nullable=True)
-    aceite_verbal = Column(Boolean, default=True)
-    motivo_conversao = Column(Text, nullable=True)
-    criado_em = Column(DateTime, default=datetime.utcnow)
-    cid_principal = Column(String, nullable=True)
-    cid_secundario = Column(String, nullable=True)
-    comorbidades = Column(Text, nullable=True)
-    alergias = Column(Text, nullable=True)
-    tabagismo = Column(String, nullable=True)
-    etilismo = Column(String, nullable=True)
-    atividade_fisica = Column(String, nullable=True)
-    historico_familiar = Column(Text, nullable=True)
-    pessoa_com_deficiencia = Column(Boolean, default=False)
-    tipo_deficiencia = Column(String, nullable=True)
-    vacinacao_influenza = Column(Boolean, default=False)
-    vacinacao_covid = Column(Boolean, default=False)
-    adesao_terapeutica = Column(String, nullable=True)
-    meta_pressao_arterial = Column(String, nullable=True)
-    meta_glicemica = Column(String, nullable=True)
-    meta_peso = Column(String, nullable=True)
-    observacoes_clinicas = Column(Text, nullable=True)
-    planos_cuidado = relationship("PlanoCuidado", back_populates="paciente", cascade="all, delete-orphan"
-    )
 
-class PlanoCuidado(BaseConsultorio):
-    __tablename__ = "planos_cuidado"
 
-    id = Column(Integer, primary_key=True, index=True)
 
-    paciente_id = Column(
-        Integer,
-        ForeignKey("pacientes_clinicos.id"),
-        nullable=False
-    )
 
-    criado_em = Column(
-        DateTime,
-        default=datetime.utcnow
-    )
 
-    criado_por = Column(String(150))
 
-    problema_identificado = Column(Text)
 
-    objetivo_terapeutico = Column(Text)
 
-    intervencoes_planejadas = Column(Text)
 
-    prazo_reavaliacao = Column(Date)
 
-    status = Column(
-        String(30),
-        default="pendente"
-    )
 
-    observacoes = Column(Text)
 
-    concluido_em = Column(DateTime)
 
-    resultado = Column(Text)
 
-    resultado_classificacao = Column(String(50))
 
-    paciente = relationship(
-        "PacienteClinico",
-        back_populates="planos_cuidado"
-    )    
 
 
-class ProntuarioClinico(BaseConsultorio):
-    __tablename__ = "prontuarios_clinicos"
 
-    id = Column(Integer, primary_key=True, index=True)
-    paciente_clinico_id = Column(Integer, ForeignKey("pacientes_clinicos.id"), nullable=False)
-    status = Column(String, default="ativo")
-    data_abertura = Column(DateTime, default=datetime.utcnow)
-    observacoes = Column(Text, nullable=True)    
 
-class EvolucaoClinica(BaseConsultorio):
-    __tablename__ = "evolucoes_clinicas"
 
-    id = Column(Integer, primary_key=True, index=True)
-    prontuario_id = Column(Integer, ForeignKey("prontuarios_clinicos.id"), nullable=False)
 
-    intervencao_id = Column(Integer, nullable=True)
 
-    data_evolucao = Column(DateTime, default=datetime.utcnow)
-    tipo_atendimento = Column(String, nullable=True)
 
-    queixa_principal = Column(Text, nullable=True)
-    historia_breve = Column(Text, nullable=True)
 
-    avaliacao_farmaceutica = Column(Text, nullable=True)
-    problemas_identificados = Column(Text, nullable=True)
 
-    conduta = Column(Text, nullable=True)
-    orientacoes_realizadas = Column(Text, nullable=True)
-    plano_acompanhamento = Column(Text, nullable=True)
 
-    necessidade_retorno = Column(Boolean, default=False)
-    data_retorno_sugerida = Column(Date, nullable=True)
 
-    observacoes = Column(Text, nullable=True)
-    criado_em = Column(DateTime, default=datetime.utcnow)
 
 
-class DesfechoClinico(BaseConsultorio):
-    __tablename__ = "desfechos_clinicos"
 
-    id = Column(Integer, primary_key=True, index=True)
-    evolucao_id = Column(Integer, ForeignKey("evolucoes_clinicas.id"), nullable=False)
 
-    data_desfecho = Column(DateTime, default=datetime.utcnow)
 
-    melhora_clinica = Column(String, nullable=True)  # sim, parcial, nao
-    adesao_tratamento = Column(String, nullable=True)  # boa, regular, ruim, nao_avaliada
-    resolucao_problema = Column(Boolean, default=False)
-    necessidade_encaminhamento = Column(Boolean, default=False)
 
-    encaminhamento_realizado = Column(String, nullable=True)
-    resultado_observado = Column(Text, nullable=True)
-    observacoes = Column(Text, nullable=True)
 
-    criado_em = Column(DateTime, default=datetime.utcnow)
 
-class MedicamentoUso(BaseConsultorio):
-    __tablename__ = "medicamentos_uso"
 
-    id = Column(Integer, primary_key=True, index=True)
-    paciente_clinico_id = Column(Integer, ForeignKey("pacientes_clinicos.id"), nullable=False)
 
-    nome_medicamento = Column(String, nullable=False)
-    dose = Column(String, nullable=True)
-    via = Column(String, nullable=True)
-    frequencia = Column(String, nullable=True)
-    indicacao = Column(String, nullable=True)
 
-    uso_continuo = Column(Boolean, default=True)
-    adesao_referida = Column(String, nullable=True)
-    observacoes = Column(Text, nullable=True)
 
-    ativo = Column(Boolean, default=True)
-    criado_em = Column(DateTime, default=datetime.utcnow)
 
 
-class IntervencaoFarmacoterapia(BaseConsultorio):
-    __tablename__ = "intervencoes_farmacoterapia"
 
-    id = Column(Integer, primary_key=True, index=True)
-    paciente_clinico_id = Column(Integer, ForeignKey("pacientes_clinicos.id"), nullable=False)
-    medicamento_uso_id = Column(Integer, ForeignKey("medicamentos_uso.id"), nullable=True)
 
-    tipo_intervencao = Column(String, nullable=False)
-    descricao = Column(Text, nullable=True)
-    conduta = Column(Text, nullable=True)
-    aceita_pelo_paciente = Column(Boolean, default=False)
-    necessidade_encaminhamento = Column(Boolean, default=False)
-    observacoes = Column(Text, nullable=True)
-    criado_em = Column(DateTime, default=datetime.utcnow)
 
 
-class DesfechoIntervencaoFarmacoterapia(BaseConsultorio):
-    __tablename__ = "desfechos_intervencoes_farmacoterapia"
 
-    id = Column(Integer, primary_key=True, index=True)
-    intervencao_id = Column(Integer, ForeignKey("intervencoes_farmacoterapia.id"), nullable=False)
-    status_desfecho = Column(String, nullable=False)
-    resultado_observado = Column(Text, nullable=True)
-    necessidade_nova_intervencao = Column(Boolean, default=False)
-    observacoes = Column(Text, nullable=True)
-    criado_em = Column(DateTime, default=datetime.utcnow)
 
-class EvolucaoFarmaceutica(BaseConsultorio):
-    __tablename__ = "evolucoes_farmaceuticas"
 
-    id = Column(Integer, primary_key=True, index=True)
-    paciente_simplificado_id = Column(Integer, ForeignKey("pacientes_simplificados.id"), nullable=False)
 
-    subjetivo = Column(Text, nullable=True)
-    objetivo = Column(Text, nullable=True)
-    avaliacao = Column(Text, nullable=True)
-    plano = Column(Text, nullable=True)
 
-    prm = Column(Text, nullable=True)
-    adesao = Column(String, nullable=True)
-    metas_clinicas = Column(Text, nullable=True)
-    orientacoes = Column(Text, nullable=True)
-    encaminhamento = Column(Text, nullable=True)
 
-    risco_clinico = Column(String, nullable=True)
-    observacoes = Column(Text, nullable=True)
 
-    criado_em = Column(DateTime, default=datetime.utcnow)
 
 
-class UserConsultorio(BaseConsultorio):
-    __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
-    nome = Column(String, nullable=False)
-    email = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
-    perfil = Column(String, nullable=True)
-    categoria_profissional = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
 
-class ResolucaoAlertaClinico(BaseConsultorio):
-    __tablename__ = "resolucoes_alertas_clinicos"
 
-    id = Column(Integer, primary_key=True, index=True)
 
-    alerta_origem = Column(String, nullable=True)
-    alerta_tipo = Column(String, nullable=True)
-    alerta_chave = Column(String, nullable=False, index=True)
 
-    paciente_id = Column(Integer, nullable=True)
-    paciente_nome = Column(String, nullable=True)
-
-    prioridade = Column(String, nullable=True)
-    mensagem_alerta = Column(Text, nullable=True)
-
-    desfecho = Column(String, nullable=False)
-    observacoes = Column(Text, nullable=True)
-
-    evolucao_id = Column(Integer, nullable=True)
-    intervencao_id = Column(Integer, nullable=True)
-
-    resolvido_por = Column(String, nullable=True)
-    resolvido_em = Column(DateTime, default=datetime.utcnow)
-
-class CapacidadeAgenda(BaseConsultorio):
-    __tablename__ = "capacidade_agenda"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    servico_origem = Column(String, nullable=False)
-    dia_semana = Column(Integer, nullable=False)
-
-    capacidade_maxima = Column(Integer, nullable=False)
-
-    ativo = Column(Boolean, default=True)
-
-    observacoes = Column(Text, nullable=True)
-
-    criado_em = Column(DateTime, default=datetime.utcnow)
-    atualizado_em = Column(DateTime, default=datetime.utcnow)
-
-class NotificacaoAgenda(BaseConsultorio):
-    __tablename__ = "notificacoes_agenda"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    agenda_id = Column(Integer, nullable=True)
-    paciente_id = Column(Integer, nullable=True)
-    paciente_nome = Column(String, nullable=True)
-    telefone = Column(String, nullable=True)
-
-    tipo_notificacao = Column(String, nullable=False)
-
-    mensagem = Column(Text, nullable=False)
-
-    data_programada = Column(Date, nullable=True)
-    data_envio = Column(DateTime, nullable=True)
-
-    status = Column(String, default="pendente")
-
-    tentativa_envio = Column(Integer, default=0)
-    erro_envio = Column(Text, nullable=True)
-    usuario_atualizacao = Column(String, nullable=True)
-    canal = Column(String, default="interno")
-
-    criado_em = Column(DateTime, default=datetime.utcnow)
-    atualizado_em = Column(DateTime, default=datetime.utcnow)
-
-class PacienteAgenda(BaseConsultorio):
-    __tablename__ = "pacientes_agenda"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    nome = Column(String, nullable=False, index=True)
-    cpf = Column(String, nullable=True, index=True)
-    cns = Column(String, nullable=True, index=True)
-
-    telefone = Column(String, nullable=True)
-    telefone_alternativo = Column(String, nullable=True)
-
-    municipio = Column(String, nullable=True)
-    logradouro = Column(String, nullable=True)
-    numero_residencia = Column(String, nullable=True)
-    complemento_residencia = Column(String, nullable=True)
-
-    origem = Column(String, default="manual")
-    ativo = Column(Boolean, default=True)
-
-    criado_em = Column(DateTime, default=datetime.utcnow)
-    atualizado_em = Column(DateTime, default=datetime.utcnow)
-
-class AuditoriaSistema(BaseConsultorio):
-    __tablename__ = "auditoria_sistema"
-
-    id = Column(Integer, primary_key=True, index=True)
-    usuario = Column(String, nullable=True)
-    modulo = Column(String, nullable=False)
-    acao = Column(String, nullable=False)
-    registro_id = Column(Integer, nullable=True)
-    descricao = Column(Text, nullable=True)
-    criado_em = Column(DateTime, default=datetime.utcnow)
-
-class ConfiguracaoSistema(BaseConsultorio):
-    __tablename__ = "configuracoes_sistema"
-
-    id = Column(Integer, primary_key=True, index=True)
-    chave = Column(String, unique=True, index=True, nullable=False)
-    valor = Column(String, nullable=True)
-    descricao = Column(Text, nullable=True)
-    atualizado_em = Column(DateTime, default=datetime.utcnow)
-
-class PacienteSimplificadoCreate(BaseModel):
-    nome: str
-    data_nascimento: Optional[date] = None
-    idade: Optional[int] = None
-    sexo: Optional[str] = None
-    telefone: Optional[str] = None
-    bairro: Optional[str] = None
-    observacoes: Optional[str] = None
-
-
-class AtendimentoRapidoCreate(BaseModel):
-    paciente_simplificado_id: int
-    tipo_servico: str
-    observacoes: Optional[str] = None
-
-
-class AfericaoPACreate(BaseModel):
-    atendimento_rapido_id: int
-    pressao_sistolica: int
-    pressao_diastolica: int
-    frequencia_cardiaca: Optional[int] = None
-    posicao_paciente: Optional[str] = None
-    braco_medido: Optional[str] = None
-    observacoes: Optional[str] = None
-
-
-class GlicemiaCapilarCreate(BaseModel):
-    atendimento_rapido_id: int
-    valor_glicemia: int
-    tipo_jejum: Optional[str] = None
-    observacoes: Optional[str] = None
-
-
-class BioimpedanciaCreate(BaseModel):
-    atendimento_rapido_id: int
-
-    peso: Optional[float] = None
-    altura: Optional[float] = None
-
-    percentual_gordura: Optional[float] = None
-    percentual_massa_muscular: Optional[float] = None
-
-    gordura_visceral: Optional[float] = None
-    metabolismo_basal: Optional[float] = None
-    fator_atividade: Optional[float] = None
-
-    idade_corporal: Optional[int] = None
-    observacoes: Optional[str] = None
-
-class PicoFluxoCreate(BaseModel):
-    atendimento_rapido_id: int
-    valor_medido: int
-    valor_previsto: Optional[int] = None
-    observacoes: Optional[str] = None
-
-class ConversaoClinicoCreate(BaseModel):
-    aceite_verbal: bool
-    motivo_conversao: Optional[str] = None
-    endereco: Optional[str] = None
-    cpf: Optional[str] = None
-    cns: Optional[str] = None
-    nome_mae: Optional[str] = None
-    observacoes_prontuario: Optional[str] = None
-
-class PacienteClinicoIdentificacaoUpdate(BaseModel):
-    cpf: Optional[str] = None
-    cns: Optional[str] = None
-    nome_mae: Optional[str] = None
-    telefone: Optional[str] = None
-    endereco: Optional[str] = None
-    bairro: Optional[str] = None
-
-
-class PacienteClinicoDadosClinicosUpdate(BaseModel):
-    cid_principal: Optional[str] = None
-    cid_secundario: Optional[str] = None
-    comorbidades: Optional[str] = None
-    alergias: Optional[str] = None
-    tabagismo: Optional[str] = None
-    etilismo: Optional[str] = None
-    atividade_fisica: Optional[str] = None
-    historico_familiar: Optional[str] = None
-    pessoa_com_deficiencia: Optional[bool] = False
-    tipo_deficiencia: Optional[str] = None
-    vacinacao_influenza: Optional[bool] = False
-    vacinacao_covid: Optional[bool] = False
-    adesao_terapeutica: Optional[str] = None
-    meta_pressao_arterial: Optional[str] = None
-    meta_glicemica: Optional[str] = None
-    meta_peso: Optional[str] = None
-    observacoes_clinicas: Optional[str] = None
-
-class EvolucaoClinicaCreate(BaseModel):
-    tipo_atendimento: Optional[str] = None
-
-    queixa_principal: Optional[str] = None
-    historia_breve: Optional[str] = None
-
-    avaliacao_farmaceutica: Optional[str] = None
-    problemas_identificados: Optional[str] = None
-
-    conduta: Optional[str] = None
-    orientacoes_realizadas: Optional[str] = None
-    plano_acompanhamento: Optional[str] = None
-
-    necessidade_retorno: bool = False
-    data_retorno_sugerida: Optional[date] = None
-
-    observacoes: Optional[str] = None
-
-class DesfechoClinicoCreate(BaseModel):
-    melhora_clinica: Optional[str] = None
-    adesao_tratamento: Optional[str] = None
-    resolucao_problema: bool = False
-    necessidade_encaminhamento: bool = False
-    encaminhamento_realizado: Optional[str] = None
-    resultado_observado: Optional[str] = None
-    observacoes: Optional[str] = None
-
-class MedicamentoUsoCreate(BaseModel):
-    nome_medicamento: str
-    dose: Optional[str] = None
-    via: Optional[str] = None
-    frequencia: Optional[str] = None
-    indicacao: Optional[str] = None
-    uso_continuo: bool = True
-    adesao_referida: Optional[str] = None
-    observacoes: Optional[str] = None    
-
-
-class IntervencaoFarmacoterapiaCreate(BaseModel):
-    medicamento_uso_id: Optional[int] = None
-    tipo_intervencao: str
-    descricao: Optional[str] = None
-    conduta: Optional[str] = None
-    aceita_pelo_paciente: bool = False
-    necessidade_encaminhamento: bool = False
-    observacoes: Optional[str] = None
-
-
-class DesfechoIntervencaoFarmacoterapiaCreate(BaseModel):
-    status_desfecho: str
-    resultado_observado: Optional[str] = None
-    necessidade_nova_intervencao: bool = False
-    observacoes: Optional[str] = None
-
-class EvolucaoFarmaceuticaCreate(BaseModel):
-    paciente_simplificado_id: int
-    subjetivo: Optional[str] = None
-    objetivo: Optional[str] = None
-    avaliacao: Optional[str] = None
-    plano: Optional[str] = None
-    prm: Optional[str] = None
-    adesao: Optional[str] = None
-    metas_clinicas: Optional[str] = None
-    orientacoes: Optional[str] = None
-    encaminhamento: Optional[str] = None
-    risco_clinico: Optional[str] = None
-    observacoes: Optional[str] = None
-
-class ResolucaoAlertaClinicoCreate(BaseModel):
-    alerta_origem: Optional[str] = None
-    alerta_tipo: Optional[str] = None
-    alerta_chave: str
-
-    paciente_id: Optional[int] = None
-    paciente_nome: Optional[str] = None
-
-    prioridade: Optional[str] = None
-    mensagem_alerta: Optional[str] = None
-
-    desfecho: str
-    observacoes: Optional[str] = None
-
-    evolucao_id: Optional[int] = None
-    intervencao_id: Optional[int] = None
-
-class PlanoCuidadoCreate(BaseModel):
-    paciente_id: int
-    problema_identificado: str
-    objetivo_terapeutico: str
-    intervencoes_planejadas: str
-    prazo_reavaliacao: Optional[date] = None
-    observacoes: Optional[str] = None
-
-
-class PlanoCuidadoUpdate(BaseModel):
-    problema_identificado: Optional[str] = None
-    objetivo_terapeutico: Optional[str] = None
-    intervencoes_planejadas: Optional[str] = None
-    prazo_reavaliacao: Optional[date] = None
-    status: Optional[str] = None
-    observacoes: Optional[str] = None
-
-
-class PlanoCuidadoConclusao(BaseModel):
-    resultado: str
-    resultado_classificacao: str
-
-class AgendaIntegrada(BaseConsultorio):
-    __tablename__ = "agenda_integrada"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    servico_origem = Column(String, nullable=False)
-    tipo_evento = Column(String, nullable=False)
-
-    paciente_id = Column(Integer, nullable=True)
-    paciente_nome = Column(String, nullable=False)
-    telefone = Column(String, nullable=True)
-
-    medicamento = Column(String, nullable=True)
-    situacao_laudo = Column(String, nullable=True)
-
-    data_evento = Column(Date, nullable=False)
-
-    status = Column(String, default="agendado")
-
-    data_status = Column(DateTime, nullable=True)
-    usuario_status = Column(String, nullable=True)
-
-    mensagem_notificacao = Column(Text, nullable=True)
-    data_inicio_vigencia = Column(Date, nullable=True)
-    data_fim_vigencia = Column(Date, nullable=True)
-
-    renovado = Column(Boolean, default=False)
-    data_renovacao = Column(Date, nullable=True)
-
-    origem_importacao = Column(String, nullable=True)
-    lote_importacao = Column(String, nullable=True)
-
-    notificacao_penultimo_mes_enviada = Column(Boolean, default=False)
-    notificacao_ultimo_mes_enviada = Column(Boolean, default=False)
-    notificacao_atraso_disp_enviada = Column(Boolean, default=False)
-    notificar_whatsapp = Column(Boolean, default=True)
-
-    notificacao_vespera_enviada = Column(Boolean, default=False)
-    notificacao_dia_enviada = Column(Boolean, default=False)
-    notificacao_extra_enviada = Column(Boolean, default=False)
-
-    notificado_em = Column(DateTime, nullable=True)
-
-    referencia_tipo = Column(String, nullable=True)
-    referencia_id = Column(Integer, nullable=True)
-
-    observacoes = Column(Text, nullable=True)
-
-    criado_em = Column(DateTime, default=datetime.utcnow)
-    atualizado_em = Column(DateTime, default=datetime.utcnow)
-
-    evento_pai_id = Column(Integer, nullable=True)
 
 BaseConsultorio.metadata.create_all(bind=engine)
 
-class AgendaIntegradaCreate(BaseModel):
-    servico_origem: str
-    tipo_evento: str
-
-    paciente_id: Optional[int] = None
-    paciente_nome: str
-    telefone: Optional[str] = None
-
-    medicamento: Optional[str] = None
-    situacao_laudo: Optional[str] = None
-
-    data_evento: Optional[date] = None
-
-    mensagem_notificacao: Optional[str] = None
-    notificar_whatsapp: bool = True
-
-    data_inicio_vigencia: Optional[date] = None
-    data_fim_vigencia: Optional[date] = None
-
-    renovado: bool = False
-    data_renovacao: Optional[date] = None
-
-    referencia_tipo: Optional[str] = None
-    referencia_id: Optional[int] = None
-
-    observacoes: Optional[str] = None
-
-class AgendaIntegradaUpdate(BaseModel):
-    servico_origem: Optional[str] = None
-    tipo_evento: Optional[str] = None
-
-    paciente_nome: Optional[str] = None
-    telefone: Optional[str] = None
-
-    medicamento: Optional[str] = None
-    situacao_laudo: Optional[str] = None
-
-    data_evento: Optional[date] = None
-
-    data_inicio_vigencia: Optional[date] = None
-    data_fim_vigencia: Optional[date] = None
-
-    renovado: Optional[bool] = None
-    data_renovacao: Optional[date] = None
-
-    status: Optional[str] = None
-    mensagem_notificacao: Optional[str] = None
-    notificar_whatsapp: Optional[bool] = None
-    observacoes: Optional[str] = None
-
-class AgendaStatusUpdate(BaseModel):
-    status: str
-    observacoes: Optional[str] = None
-
-class CapacidadeAgendaCreate(BaseModel):
-    servico_origem: str
-    dia_semana: int
-    capacidade_maxima: int
-    observacoes: Optional[str] = None
 
 
-class CapacidadeAgendaUpdate(BaseModel):
-    capacidade_maxima: Optional[int] = None
-    ativo: Optional[bool] = None
-    observacoes: Optional[str] = None
-
-class NotificacaoAgendaUpdate(BaseModel):
-    status: Optional[str] = None
-    data_envio: Optional[datetime] = None
-    erro_envio: Optional[str] = None
-    canal: Optional[str] = None
-
-class PacienteAgendaCreate(BaseModel):
-    nome: str
-    cpf: Optional[str] = None
-    cns: Optional[str] = None
-    telefone: Optional[str] = None
-    telefone_alternativo: Optional[str] = None
-    municipio: Optional[str] = None
-    logradouro: Optional[str] = None
-    numero_residencia: Optional[str] = None
-    complemento_residencia: Optional[str] = None
-    origem: Optional[str] = "manual"
 
 
-class PacienteAgendaUpdate(BaseModel):
-    nome: Optional[str] = None
-    cpf: Optional[str] = None
-    cns: Optional[str] = None
-    telefone: Optional[str] = None
-    telefone_alternativo: Optional[str] = None
-    municipio: Optional[str] = None
-    logradouro: Optional[str] = None
-    numero_residencia: Optional[str] = None
-    complemento_residencia: Optional[str] = None
-    ativo: Optional[bool] = None
+
+
+
+
+
 
 router = APIRouter(
     prefix="/consultorio",
     tags=["Consultório Farmacêutico"]
 )
-
-TIPOS_EVENTO_AGENDA = [
-    "retirada_medicamento",
-    "renovacao_laudo",
-    "adequacao",
-    "encerramento",
-    "retorno_consultorio",
-    "consulta_farmaceutica",
-    "risco_interrupcao_tratamento",
-]
-
-STATUS_AGENDA = [
-    "agendado",
-    "notificado",
-    "reagendado",
-    "realizado",
-    "cancelado",
-    "renovacao_recomendada",
-    "renovacao_urgente",
-    "risco_interrupcao_tratamento",
-]
-
-SERVICOS_ORIGEM_AGENDA = [
-    "dispensacao",
-    "renovacao_laudo",
-    "consultorio",
-    "intervencao",
-]
 
 def get_current_user_consultorio(
     token: str = Depends(oauth2_scheme),
@@ -881,814 +253,24 @@ def get_current_user_consultorio(
 
 
 def exigir_autenticado(user: UserConsultorio):
-    if not user:
-        raise HTTPException(
-            status_code=401,
-            detail="Usuário não autenticado"
-        )
+    return perm_exigir_autenticado(user)
 
 def exigir_pode_registrar(user: UserConsultorio):
-
-    if user.perfil in ["admin", "operador"]:
-        return
-
-    if user.categoria_profissional in [
-        "Farmacêutico",
-        "Docente",
-        "Residente",
-        "Estagiário"
-    ]:
-        return
-
-    raise HTTPException(
-        status_code=403,
-        detail="Usuário sem permissão para registrar dados."
-    )
+    return perm_exigir_pode_registrar(user)
 
 def exigir_farmaceutico_ou_admin(user: UserConsultorio):
-    if user.perfil == "admin":
-        return
-
-    if user.categoria_profissional in ["Farmacêutico", "Docente"]:
-        return
-
-    raise HTTPException(
-        status_code=403,
-        detail="Ação permitida apenas para farmacêutico, docente ou administrador."
-    )
-
+    return perm_exigir_farmaceutico_ou_admin(user)
 
 def exigir_admin(user: UserConsultorio):
-    if user.perfil != "admin":
-        raise HTTPException(
-            status_code=403,
-            detail="Ação restrita ao administrador."
-        )
+    return perm_exigir_admin(user)
 
-def calcular_idade(data_nascimento):
-    if not data_nascimento:
-        return None
-
-    hoje = date.today()
-
-    idade = hoje.year - data_nascimento.year
-
-    if (
-        (hoje.month, hoje.day)
-        < (data_nascimento.month, data_nascimento.day)
-    ):
-        idade -= 1
-
-    return idade
-
-
-def calcular_risco_populacional(
-    pa=None,
-    glicemia=None,
-    bio=None,
-    pico=None,
-    reincidencia_alertas=0,
-    adesao=None,
-):
-    score = 0
-
-    fatores = []
-
-    # PRESSÃO ARTERIAL
-    if pa:
-        classificacao_pa = getattr(pa, "classificacao", None)
-
-        if classificacao_pa == "pa_elevada":
-            score += 1
-            fatores.append("PA elevada")
-
-        elif classificacao_pa == "hipertensao":
-            score += 2
-            fatores.append("Hipertensão")
-
-        elif classificacao_pa == "crise_hipertensiva":
-            score += 4
-            fatores.append("Crise hipertensiva")
-
-    # GLICEMIA
-    if glicemia:
-        classificacao_glicemia = getattr(
-            glicemia,
-            "classificacao",
-            None
-        )
-
-        if classificacao_glicemia == "alterada":
-            score += 1
-            fatores.append("Glicemia alterada")
-
-        elif classificacao_glicemia == "possivel_diabetes":
-            score += 3
-            fatores.append("Possível diabetes")
-
-    # BIOIMPEDÂNCIA
-    if bio:
-        risco_cardiometabolico = getattr(
-            bio,
-            "risco_cardiometabolico",
-            None
-        )
-
-        gordura_visceral = getattr(
-            bio,
-            "gordura_visceral",
-            0
-        ) or 0
-
-        imc = getattr(bio, "imc", 0) or 0
-
-        if risco_cardiometabolico == "moderado":
-            score += 1
-            fatores.append("Risco cardiometabólico moderado")
-
-        elif risco_cardiometabolico == "alto":
-            score += 3
-            fatores.append("Risco cardiometabólico alto")
-
-        if gordura_visceral >= 15:
-            score += 2
-            fatores.append("Gordura visceral elevada")
-
-        if imc >= 35:
-            score += 2
-            fatores.append("Obesidade importante")
-
-    # PICO DE FLUXO
-    if pico:
-        classificacao_pico = getattr(
-            pico,
-            "classificacao",
-            None
-        )
-
-        if classificacao_pico == "zona_amarela":
-            score += 1
-            fatores.append("Pico de fluxo reduzido")
-
-        elif classificacao_pico == "zona_vermelha":
-            score += 3
-            fatores.append("Pico de fluxo crítico")
-
-    # REINCIDÊNCIA
-    if reincidencia_alertas >= 3:
-        score += 2
-        fatores.append("Reincidência de alertas")
-
-    # ADESÃO
-    if adesao == "baixa":
-        score += 2
-        fatores.append("Baixa adesão")
-
-    elif adesao == "moderada":
-        score += 1
-        fatores.append("Adesão moderada")
-
-    # CLASSIFICAÇÃO FINAL
-    if score <= 1:
-        risco = "baixo"
-
-    elif score <= 3:
-        risco = "moderado"
-
-    elif score <= 6:
-        risco = "alto"
-
-    else:
-        risco = "muito_alto"
-
-    return {
-        "risco": risco,
-        "score": score,
-        "fatores": fatores,
-    }
-
-def calcular_capacidade_agenda(
-    db: Session,
-    servico_origem: str,
-    data_evento: date,
-    ignorar_agenda_id: Optional[int] = None
-):
-    if not data_evento:
-        return {
-            "capacidade_configurada": False,
-            "capacidade_maxima": None,
-            "agendados": 0,
-            "vagas_disponiveis": None,
-            "capacidade_atingida": False,
-        }
-
-    dia_semana = data_evento.weekday()
-
-    capacidade = db.query(CapacidadeAgenda).filter(
-        CapacidadeAgenda.servico_origem == servico_origem,
-        CapacidadeAgenda.dia_semana == dia_semana,
-        CapacidadeAgenda.ativo == True
-    ).first()
-
-    capacidade_maxima = (
-        capacidade.capacidade_maxima
-        if capacidade
-        else None
-    )
-
-    query = db.query(AgendaIntegrada).filter(
-        AgendaIntegrada.servico_origem == servico_origem,
-        AgendaIntegrada.data_evento == data_evento,
-        AgendaIntegrada.status.in_([
-            "agendado",
-            "notificado",
-            "reagendado"
-        ])
-    )
-
-    if ignorar_agenda_id:
-        query = query.filter(
-            AgendaIntegrada.id != ignorar_agenda_id
-        )
-
-    agendados = query.count()
-
-    vagas_disponiveis = (
-        capacidade_maxima - agendados
-        if capacidade_maxima is not None
-        else None
-    )
-
-    capacidade_atingida = (
-        agendados >= capacidade_maxima
-        if capacidade_maxima is not None
-        else False
-    )
-
-    return {
-        "capacidade_configurada": capacidade is not None,
-        "capacidade_maxima": capacidade_maxima,
-        "agendados": agendados,
-        "vagas_disponiveis": vagas_disponiveis,
-        "capacidade_atingida": capacidade_atingida,
-    }
-
-
-def criar_proxima_dispensacao_automatica(
-    db: Session,
-    agenda_atual: AgendaIntegrada
-):
-    """Cria próxima dispensação em 30 dias, ou alerta de risco se a vigência não permitir.
-
-    Regra operacional:
-    - só se aplica a dispensação marcada como realizada;
-    - não cria duplicidade futura para mesmo paciente/medicamento;
-    - se a próxima retirada extrapola a vigência do laudo, cria alerta de risco;
-    - respeita capacidade diária quando houver configuração.
-    """
-    servico_normalizado = (agenda_atual.servico_origem or "").strip().lower()
-
-    if servico_normalizado not in ["dispensacao", "dispensação"]:
-        return None
-
-    if not agenda_atual.data_evento:
-        return None
-
-    proxima_data = agenda_atual.data_evento + timedelta(days=30)
-
-    # Não agenda nova retirada fora da vigência do laudo.
-    if (
-        agenda_atual.data_fim_vigencia
-        and proxima_data > agenda_atual.data_fim_vigencia
-    ):
-        alerta_existente = db.query(AgendaIntegrada).filter(
-            AgendaIntegrada.evento_pai_id == agenda_atual.id,
-            AgendaIntegrada.status == "risco_interrupcao_tratamento"
-        ).first()
-
-        if alerta_existente:
-            alerta_existente._origem_automacao = "risco_interrupcao"
-            return alerta_existente
-
-        alerta = AgendaIntegrada(
-            evento_pai_id=agenda_atual.id,
-            servico_origem="renovacao_laudo",
-            tipo_evento="risco_interrupcao_tratamento",
-            paciente_id=agenda_atual.paciente_id,
-            paciente_nome=agenda_atual.paciente_nome,
-            telefone=agenda_atual.telefone,
-            medicamento=agenda_atual.medicamento,
-            data_evento=date.today(),
-            data_inicio_vigencia=agenda_atual.data_inicio_vigencia,
-            data_fim_vigencia=agenda_atual.data_fim_vigencia,
-            situacao_laudo="risco_interrupcao_tratamento",
-            status="risco_interrupcao_tratamento",
-            data_status=datetime.utcnow(),
-            usuario_status="sistema",
-            notificar_whatsapp=True,
-            observacoes=(
-                "Nova dispensação automática não criada porque a vigência "
-                "do laudo termina antes da próxima retirada prevista."
-            )
-        )
-
-        db.add(alerta)
-        db.flush()
-        db.refresh(alerta)
-        alerta._origem_automacao = "risco_interrupcao"
-        return alerta
-
-    # Evita duplicidade: prioriza paciente_id quando existir; usa nome/telefone como fallback.
-    query_existente = db.query(AgendaIntegrada).filter(
-        AgendaIntegrada.id != agenda_atual.id,
-        AgendaIntegrada.servico_origem.in_(["dispensacao", "dispensação"]),
-        AgendaIntegrada.medicamento == agenda_atual.medicamento,
-        AgendaIntegrada.status.in_(["agendado", "notificado", "reagendado"]),
-        AgendaIntegrada.data_evento >= proxima_data
-    )
-
-    if agenda_atual.paciente_id:
-        query_existente = query_existente.filter(
-            AgendaIntegrada.paciente_id == agenda_atual.paciente_id
-        )
-    else:
-        query_existente = query_existente.filter(
-            AgendaIntegrada.paciente_nome == agenda_atual.paciente_nome,
-            AgendaIntegrada.telefone == agenda_atual.telefone
-        )
-
-    existe = query_existente.first()
-
-    if existe:
-        existe._origem_automacao = "existente"
-        return existe
-
-    capacidade = calcular_capacidade_agenda(
-        db=db,
-        servico_origem="dispensacao",
-        data_evento=proxima_data
-    )
-
-    if capacidade["capacidade_atingida"]:
-        for i in range(1, 15):
-            data_teste = proxima_data + timedelta(days=i)
-
-            capacidade_teste = calcular_capacidade_agenda(
-                db=db,
-                servico_origem="dispensacao",
-                data_evento=data_teste
-            )
-
-            if (
-                capacidade_teste["capacidade_configurada"]
-                and not capacidade_teste["capacidade_atingida"]
-            ):
-                proxima_data = data_teste
-                break
-
-    novo_evento = AgendaIntegrada(
-        evento_pai_id=agenda_atual.id,
-        servico_origem="dispensacao",
-        tipo_evento="retirada_medicamento",
-        paciente_id=agenda_atual.paciente_id,
-        paciente_nome=agenda_atual.paciente_nome,
-        telefone=agenda_atual.telefone,
-        medicamento=agenda_atual.medicamento,
-        data_evento=proxima_data,
-        data_inicio_vigencia=agenda_atual.data_inicio_vigencia,
-        data_fim_vigencia=agenda_atual.data_fim_vigencia,
-        situacao_laudo=agenda_atual.situacao_laudo,
-        status="agendado",
-        notificar_whatsapp=True,
-        observacoes=(
-            f"Agendamento automático gerado após retirada realizada "
-            f"em {agenda_atual.data_evento.strftime('%d/%m/%Y')}"
-        )
-    )
-
-    db.add(novo_evento)
-    db.flush()
-    db.refresh(novo_evento)
-    novo_evento._origem_automacao = "criado"
-    return novo_evento
-
-def gerar_alertas_renovacao_laudo(
-    db: Session
-):
-    hoje = date.today()
-    criados = 0
-    atualizados = 0
-
-    eventos = db.query(AgendaIntegrada).filter(
-        AgendaIntegrada.servico_origem == "dispensacao",
-        AgendaIntegrada.data_fim_vigencia.isnot(None),
-        AgendaIntegrada.renovado == False
-    ).all()
-
-    for evento in eventos:
-        dias_para_vencimento = (evento.data_fim_vigencia - hoje).days
-
-        if dias_para_vencimento < 0:
-            continue
-
-        novo_status = None
-
-        dias_alerta_renovacao = obter_configuracao_int(
-            db,
-            "dias_alerta_renovacao",
-            60
-        )
-
-        dias_alerta_urgente = obter_configuracao_int(
-            db,
-            "dias_alerta_urgente",
-            30
-        )
-
-        if dias_alerta_urgente < dias_para_vencimento <= dias_alerta_renovacao:
-            novo_status = "renovacao_recomendada"
-
-        elif 0 <= dias_para_vencimento <= dias_alerta_urgente:
-            novo_status = "renovacao_urgente"
-
-        if not novo_status:
-            continue
-
-        alerta_existente = db.query(AgendaIntegrada).filter(
-            AgendaIntegrada.servico_origem == "renovacao_laudo",
-            AgendaIntegrada.paciente_nome == evento.paciente_nome,
-            AgendaIntegrada.medicamento == evento.medicamento,
-            AgendaIntegrada.data_fim_vigencia == evento.data_fim_vigencia,
-            AgendaIntegrada.status.in_([
-                "renovacao_recomendada",
-                "renovacao_urgente"
-            ])
-        ).first()
-
-        if alerta_existente:
-            if alerta_existente.status != novo_status:
-                alerta_existente.status = novo_status
-                alerta_existente.data_status = datetime.utcnow()
-                alerta_existente.usuario_status = "sistema"
-                alerta_existente.atualizado_em = datetime.utcnow()
-                atualizados += 1
-
-            continue
-
-        novo_alerta = AgendaIntegrada(
-            evento_pai_id=evento.id,
-            servico_origem="renovacao_laudo",
-            tipo_evento="renovacao_laudo",
-            paciente_id=evento.paciente_id,
-            paciente_nome=evento.paciente_nome,
-            telefone=evento.telefone,
-            medicamento=evento.medicamento,
-            data_evento=hoje,
-            data_inicio_vigencia=evento.data_inicio_vigencia,
-            data_fim_vigencia=evento.data_fim_vigencia,
-            situacao_laudo=evento.situacao_laudo,
-            status=novo_status,
-            data_status=datetime.utcnow(),
-            usuario_status="sistema",
-            notificar_whatsapp=True,
-            observacoes=(
-                f"Alerta automático de renovação gerado. "
-                f"Vigência do laudo até {evento.data_fim_vigencia.strftime('%d/%m/%Y')}."
-            )
-        )
-
-        db.add(novo_alerta)
-        criados += 1
-
-    db.commit()
-
-    return {
-        "mensagem": "Verificação de renovação de laudos concluída.",
-        "alertas_criados": criados,
-        "alertas_atualizados": atualizados
-    }
-
-def gerar_alertas_risco_interrupcao(
-    db: Session
-):
-    hoje = date.today()
-    criados = 0
-
-    dispensacoes_realizadas = db.query(AgendaIntegrada).filter(
-        AgendaIntegrada.servico_origem == "dispensacao",
-        AgendaIntegrada.status == "realizado",
-        AgendaIntegrada.data_fim_vigencia.isnot(None),
-        AgendaIntegrada.renovado == False
-    ).all()
-
-    for evento in dispensacoes_realizadas:
-        dias_para_vencimento = (
-            evento.data_fim_vigencia - evento.data_evento
-        ).days
-
-        if not (0 <= dias_para_vencimento <= 30):
-            continue
-
-        alerta_existente = db.query(AgendaIntegrada).filter(
-            AgendaIntegrada.servico_origem == "renovacao_laudo",
-            AgendaIntegrada.status == "risco_interrupcao_tratamento",
-            AgendaIntegrada.paciente_nome == evento.paciente_nome,
-            AgendaIntegrada.medicamento == evento.medicamento,
-            AgendaIntegrada.data_fim_vigencia == evento.data_fim_vigencia
-        ).first()
-
-        if alerta_existente:
-            continue
-
-        alerta = AgendaIntegrada(
-            evento_pai_id=evento.id,
-            servico_origem="renovacao_laudo",
-            tipo_evento="risco_interrupcao_tratamento",
-            paciente_id=evento.paciente_id,
-            paciente_nome=evento.paciente_nome,
-            telefone=evento.telefone,
-            medicamento=evento.medicamento,
-            data_evento=hoje,
-            data_inicio_vigencia=evento.data_inicio_vigencia,
-            data_fim_vigencia=evento.data_fim_vigencia,
-            situacao_laudo="risco_interrupcao_tratamento",
-            status="risco_interrupcao_tratamento",
-            data_status=datetime.utcnow(),
-            usuario_status="sistema",
-            notificar_whatsapp=True,
-            observacoes=(
-                "Alerta automático: dispensação realizada no último mês "
-                "de vigência do laudo, sem renovação registrada."
-            )
-        )
-
-        db.add(alerta)
-        criados += 1
-
-    db.commit()
-
-    return {
-        "mensagem": "Verificação de risco de interrupção concluída.",
-        "alertas_criados": criados
-    }
-
-def gerar_notificacoes_agenda(
-    db: Session
-):
-    hoje = date.today()
-    amanha = hoje + timedelta(days=1)
-
-    criadas = 0
-    ignoradas = 0
-
-    regras = [
-        {
-            "tipo": "dispensacao_amanha",
-            "query": db.query(AgendaIntegrada).filter(
-                AgendaIntegrada.servico_origem == "dispensacao",
-                AgendaIntegrada.status == "agendado",
-                AgendaIntegrada.data_evento == amanha
-            ),
-            "mensagem": lambda e: (
-                f"Olá, {e.paciente_nome}. Lembramos que sua retirada de "
-                f"{e.medicamento or 'medicamento'} na Farmácia Escola está "
-                f"prevista para amanhã ({e.data_evento.strftime('%d/%m/%Y')})."
-            ),
-            "data_programada": amanha
-        },
-        {
-            "tipo": "renovacao_urgente",
-            "query": db.query(AgendaIntegrada).filter(
-                AgendaIntegrada.status == "renovacao_urgente"
-            ),
-            "mensagem": lambda e: (
-                f"Olá, {e.paciente_nome}. Seu laudo está próximo do vencimento "
-                f"({e.data_fim_vigencia.strftime('%d/%m/%Y') if e.data_fim_vigencia else 'data não informada'}). "
-                f"Procure a Farmácia Escola para orientações sobre a renovação."
-            ),
-            "data_programada": hoje
-        },
-        {
-            "tipo": "renovacao_recomendada",
-            "query": db.query(AgendaIntegrada).filter(
-                AgendaIntegrada.status == "renovacao_recomendada"
-            ),
-            "mensagem": lambda e: (
-                f"Olá, {e.paciente_nome}. Identificamos que seu laudo terá vencimento em breve "
-                f"({e.data_fim_vigencia.strftime('%d/%m/%Y') if e.data_fim_vigencia else 'data não informada'}). "
-                f"Recomendamos iniciar a renovação para evitar interrupção do tratamento."
-            ),
-            "data_programada": hoje
-        },
-        {
-            "tipo": "risco_interrupcao_tratamento",
-            "query": db.query(AgendaIntegrada).filter(
-                AgendaIntegrada.status == "risco_interrupcao_tratamento"
-            ),
-            "mensagem": lambda e: (
-                f"Olá, {e.paciente_nome}. Identificamos risco de interrupção do tratamento, "
-                f"pois a vigência do laudo está encerrando ou foi encerrada. "
-                f"Procure a Farmácia Escola para orientação."
-            ),
-            "data_programada": hoje
-        },
-    ]
-
-    for regra in regras:
-        eventos = regra["query"].all()
-
-        for evento in eventos:
-            existente = db.query(NotificacaoAgenda).filter(
-                NotificacaoAgenda.agenda_id == evento.id,
-                NotificacaoAgenda.tipo_notificacao == regra["tipo"],
-                NotificacaoAgenda.status.in_(["pendente", "enviada"])
-            ).first()
-
-            if existente:
-                if not existente.paciente_id and evento.paciente_id:
-                    existente.paciente_id = evento.paciente_id
-                    existente.atualizado_em = datetime.utcnow()
-
-                ignoradas += 1
-                continue
-            notificacao = NotificacaoAgenda(
-                agenda_id=evento.id,
-                paciente_id=evento.paciente_id,
-                paciente_nome=evento.paciente_nome,
-                telefone=evento.telefone,
-                tipo_notificacao=regra["tipo"],
-                mensagem=regra["mensagem"](evento),
-                data_programada=regra["data_programada"],
-                status="pendente"
-            )
-
-            db.add(notificacao)
-            criadas += 1
-
-    db.commit()
-
-    return {
-        "mensagem": "Geração de notificações concluída.",
-        "notificacoes_criadas": criadas,
-        "notificacoes_ignoradas": ignoradas
-    }
-
-def obter_ou_criar_paciente_agenda(
-    db: Session,
-    nome: str,
-    telefone: Optional[str] = None,
-    cpf: Optional[str] = None,
-    cns: Optional[str] = None,
-    origem: str = "integracao"
-):
-    if not nome:
-        return None
-
-    paciente = None
-
-    if cpf:
-        paciente = db.query(PacienteAgenda).filter(
-            PacienteAgenda.cpf == cpf
-        ).first()
-
-    if not paciente and cns:
-        paciente = db.query(PacienteAgenda).filter(
-            PacienteAgenda.cns == cns
-        ).first()
-
-    if not paciente and telefone:
-        paciente = db.query(PacienteAgenda).filter(
-            PacienteAgenda.nome == nome,
-            PacienteAgenda.telefone == telefone
-        ).first()
-
-    if not paciente:
-        paciente = db.query(PacienteAgenda).filter(
-            PacienteAgenda.nome == nome
-        ).first()
-
-    if paciente:
-        if telefone and not paciente.telefone:
-            paciente.telefone = telefone
-        if cpf and not paciente.cpf:
-            paciente.cpf = cpf
-        if cns and not paciente.cns:
-            paciente.cns = cns
-
-        paciente.atualizado_em = datetime.utcnow()
-        db.flush()
-        return paciente
-
-    paciente = PacienteAgenda(
-        nome=nome,
-        telefone=telefone,
-        cpf=cpf,
-        cns=cns,
-        origem=origem,
-        ativo=True
-    )
-
-    db.add(paciente)
-    db.flush()
-    db.refresh(paciente)
-
-    return paciente
-
-def registrar_auditoria(
-    db: Session,
-    current,
-    modulo: str,
-    acao: str,
-    registro_id: Optional[int] = None,
-    descricao: Optional[str] = None
-):
-    usuario = (
-        getattr(current, "nome", None)
-        or getattr(current, "email", None)
-        or "sistema"
-    )
-
-    auditoria = AuditoriaSistema(
-        usuario=usuario,
-        modulo=modulo,
-        acao=acao,
-        registro_id=registro_id,
-        descricao=descricao,
-        criado_em=datetime.utcnow()
-    )
-
-    db.add(auditoria)
-
-
-def obter_configuracao(db: Session, chave: str, valor_padrao=None):
-    config = db.query(ConfiguracaoSistema).filter(
-        ConfiguracaoSistema.chave == chave
-    ).first()
-
-    if not config:
-        return valor_padrao
-
-    return config.valor
-
-
-def obter_configuracao_int(db: Session, chave: str, valor_padrao: int):
-    valor = obter_configuracao(db, chave, valor_padrao)
-
-    try:
-        return int(valor)
-    except Exception:
-        return valor_padrao
-
-
-def criar_configuracoes_padrao(db: Session):
-    configuracoes = [
-        ("dias_alerta_renovacao", "60", "Dias antes do vencimento do laudo para alerta de renovação recomendada."),
-        ("dias_alerta_urgente", "30", "Dias antes do vencimento do laudo para alerta urgente."),
-        ("dias_alerta_disp_atrasada", "5", "Dias de atraso para reforço de alerta de dispensação."),
-        ("whatsapp_habilitado", "false", "Habilita ou desabilita envio real via WhatsApp."),
-    ]
-
-    for chave, valor, descricao in configuracoes:
-        existente = db.query(ConfiguracaoSistema).filter(
-            ConfiguracaoSistema.chave == chave
-        ).first()
-
-        if not existente:
-            db.add(ConfiguracaoSistema(
-                chave=chave,
-                valor=valor,
-                descricao=descricao,
-                atualizado_em=datetime.utcnow()
-            ))
-
-@router.get("/configuracoes")
-def listar_configuracoes_sistema(
+@router.get("/alertas-clinicos/resolucoes")
+def listar_resolucoes_alertas_clinicos(
     db: Session = Depends(get_db_consultorio),
     current=Depends(get_current_user_consultorio)
 ):
-    criar_configuracoes_padrao(db)
-    db.commit()
+    return svc_listar_resolucoes_alertas_clinicos(db=db, current=current)
 
-    configuracoes = db.query(ConfiguracaoSistema).order_by(
-        ConfiguracaoSistema.chave.asc()
-    ).all()
-
-    return {
-        "total": len(configuracoes),
-        "configuracoes": configuracoes
-    }
-
-@router.get("/me")
-def consultorio_me(
-    current: UserConsultorio = Depends(get_current_user_consultorio)
-):
-    return {
-        "id": current.id,
-        "nome": current.nome,
-        "email": current.email,
-        "perfil": current.perfil,
-        "categoria_profissional": current.categoria_profissional
-    }
 
 
 @router.get("/atendimento-rapido/{atendimento_id}/declaracao-pdf")
@@ -1697,146 +279,7 @@ def gerar_declaracao_pdf(
     db: Session = Depends(get_db_consultorio),
     current=Depends(get_current_user_consultorio)
 ):
-    atendimento = db.query(AtendimentoRapido).filter(
-        AtendimentoRapido.id == atendimento_id
-    ).first()
-
-    if not atendimento:
-        raise HTTPException(
-            status_code=404,
-            detail="Atendimento não encontrado"
-        )
-
-    paciente = db.query(PacienteSimplificado).filter(
-        PacienteSimplificado.id == atendimento.paciente_simplificado_id
-    ).first()
-
-    buffer = BytesIO()
-
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=36,
-        leftMargin=36,
-        topMargin=36,
-        bottomMargin=36
-    )
-
-    styles = getSampleStyleSheet()
-    elementos = []
-
-    elementos.append(
-        Paragraph(
-            "FARMÁCIA ESCOLA PROFª ANA MARIA CERVANTES BARAZA",
-            styles["Title"]
-        )
-    )
-
-    elementos.append(
-        Paragraph(
-            "Universidade Federal de Mato Grosso do Sul",
-            styles["Normal"]
-        )
-    )
-
-    elementos.append(Spacer(1, 18))
-
-    elementos.append(
-        Paragraph(
-            "DECLARAÇÃO DE ATENDIMENTO",
-            styles["Heading1"]
-        )
-    )
-
-    elementos.append(Spacer(1, 20))
-
-    nome_paciente = getattr(paciente, "nome", "Paciente")
-    data_atendimento = (
-        atendimento.data_atendimento.strftime("%d/%m/%Y")
-        if atendimento.data_atendimento
-        else "Não informada"
-    )
-
-    texto = f"""
-    Declaramos para os devidos fins que o(a) paciente
-    <b>{nome_paciente}</b>
-    foi atendido(a) na Farmácia Escola Profª Ana Maria Cervantes Baraza,
-    em {data_atendimento},
-    referente ao serviço de
-    <b>{atendimento.tipo_servico}</b>.
-    """
-
-    elementos.append(
-        Paragraph(texto, styles["BodyText"])
-    )
-
-    elementos.append(Spacer(1, 40))
-
-    if atendimento.observacoes:
-        elementos.append(
-            Paragraph(
-                "<b>Observações:</b>",
-                styles["Heading3"]
-            )
-        )
-
-        elementos.append(
-            Paragraph(
-                atendimento.observacoes,
-                styles["BodyText"]
-            )
-        )
-
-        elementos.append(Spacer(1, 30))
-
-    nome_profissional = getattr(
-        current,
-        "nome",
-        "Farmacêutico responsável"
-    )
-
-    categoria = getattr(
-        current,
-        "categoria_profissional",
-        "Farmacêutico"
-    )
-
-    crf = getattr(current, "crf", None)
-
-    elementos.append(Spacer(1, 60))
-
-    assinatura = [
-        ["________________________________________"],
-        [nome_profissional],
-        [categoria],
-        [crf if crf else "CRF: __________________"],
-    ]
-
-    tabela_assinatura = Table(
-        assinatura,
-        colWidths=[420]
-    )
-
-    tabela_assinatura.setStyle(TableStyle([
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("FONTNAME", (0, 1), (0, 1), "Helvetica-Bold"),
-        ("PADDING", (0, 0), (-1, -1), 4),
-    ]))
-
-    elementos.append(tabela_assinatura)
-
-    doc.build(elementos)
-
-    buffer.seek(0)
-
-    return StreamingResponse(
-        buffer,
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition":
-            "inline; filename=declaracao_atendimento.pdf"
-        }
-    )
+    return svc_gerar_declaracao_pdf(atendimento_id=atendimento_id, db=db, current=current)
 
 @router.get("/dashboard-servicos")
 def dashboard_servicos(
@@ -1850,313 +293,45 @@ def dashboard_servicos(
     somente_risco: bool = False,
     db: Session = Depends(get_db_consultorio)
 ):
-      
-    query_atendimentos = db.query(AtendimentoRapido).join(
-        PacienteSimplificado,
-        PacienteSimplificado.id == AtendimentoRapido.paciente_simplificado_id
+    return montar_dashboard_servicos(
+        db=db,
+        data_inicio=data_inicio,
+        data_fim=data_fim,
+        tipo_servico=tipo_servico,
+        sexo=sexo,
+        bairro=bairro,
+        idade_min=idade_min,
+        idade_max=idade_max,
+        somente_risco=somente_risco,
     )
 
-    query_atendimentos = aplicar_filtros_atendimento(
-        query_atendimentos,
-        data_inicio,
-        data_fim,
-        tipo_servico,
-        sexo,
-        bairro,
-        idade_min,
-        idade_max
-    )
+@router.get("/dashboard-resolucao-alertas")
+def dashboard_resolucao_alertas(
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    return svc_dashboard_resolucao_alertas(db=db, current=current)
 
-    atendimentos_filtrados = query_atendimentos.all()
-    ids_atendimentos = [a.id for a in atendimentos_filtrados]
-
-    if not ids_atendimentos:
-        return dashboard_vazio()
-
-    total_atendimentos = len(ids_atendimentos)
-
-    por_tipo = {}
-    for atendimento in atendimentos_filtrados:
-        tipo = atendimento.tipo_servico or "nao_informado"
-        por_tipo[tipo] = por_tipo.get(tipo, 0) + 1
-
-    query_pa = db.query(AfericaoPA).filter(AfericaoPA.atendimento_rapido_id.in_(ids_atendimentos))
-    query_glicemia = db.query(GlicemiaCapilar).filter(GlicemiaCapilar.atendimento_rapido_id.in_(ids_atendimentos))
-    query_bio = db.query(Bioimpedancia).filter(Bioimpedancia.atendimento_rapido_id.in_(ids_atendimentos))
-    query_pico = db.query(PicoFluxo).filter(PicoFluxo.atendimento_rapido_id.in_(ids_atendimentos))
-
-    if somente_risco:
-        query_pa = query_pa.filter(AfericaoPA.classificacao.in_(["pa_elevada", "hipertensao", "crise_hipertensiva"]))
-        query_glicemia = query_glicemia.filter(GlicemiaCapilar.classificacao.in_(["alterada", "possivel_diabetes"]))
-        query_bio = query_bio.filter(Bioimpedancia.classificacao.in_(["sobrepeso", "obesidade_grau_1", "obesidade_grau_2", "obesidade_grau_3"]))
-        query_pico = query_pico.filter(PicoFluxo.classificacao.in_(["zona_amarela", "zona_vermelha"]))
-
-    pa_total = query_pa.count()
-    pa_alterada = query_pa.filter(AfericaoPA.classificacao.in_(["pa_elevada", "hipertensao", "crise_hipertensiva"])).count()
-
-    glicemia_total = query_glicemia.count()
-    glicemia_alterada = query_glicemia.filter(GlicemiaCapilar.classificacao.in_(["alterada", "possivel_diabetes"])).count()
-
-    bio_total = query_bio.count()
-    bio_risco = query_bio.filter(Bioimpedancia.classificacao.in_(["sobrepeso", "obesidade_grau_1", "obesidade_grau_2", "obesidade_grau_3"])).count()
-
-    pico_total = query_pico.count()
-    pico_risco = query_pico.filter(PicoFluxo.classificacao.in_(["zona_amarela", "zona_vermelha"])).count()
-
-    total_procedimentos = pa_total + glicemia_total + bio_total + pico_total
-
-    return {
-        "filtros_aplicados": {
-            "data_inicio": data_inicio,
-            "data_fim": data_fim,
-            "tipo_servico": tipo_servico,
-            "sexo": sexo,
-            "bairro": bairro,
-            "idade_min": idade_min,
-            "idade_max": idade_max,
-            "somente_risco": somente_risco
-        },
-        "total_atendimentos_rapidos": total_atendimentos,
-        "total_procedimentos": total_procedimentos,
-        "por_tipo_servico": por_tipo,
-        "pressao_arterial": {
-            "total": pa_total,
-            "alterados": pa_alterada,
-            "percentual_alterados": calcular_percentual(pa_alterada, pa_total)
-        },
-        "glicemia": {
-            "total": glicemia_total,
-            "alterados": glicemia_alterada,
-            "percentual_alterados": calcular_percentual(glicemia_alterada, glicemia_total)
-        },
-        "bioimpedancia": {
-            "total": bio_total,
-            "risco": bio_risco,
-            "percentual_risco": calcular_percentual(bio_risco, bio_total)
-        },
-        "pico_fluxo": {
-            "total": pico_total,
-            "risco": pico_risco,
-            "percentual_risco": calcular_percentual(pico_risco, pico_total)
-        },
-        "alertas": {
-            "pa_alterada": pa_alterada,
-            "glicemia_alterada": glicemia_alterada,
-            "bioimpedancia_risco": bio_risco,
-            "pico_fluxo_risco": pico_risco,
-            "total_alertas": pa_alterada + glicemia_alterada + bio_risco + pico_risco
-        }
-    }    
-
+@router.get("/relatorio-resolucao-alertas-pdf")
+def relatorio_resolucao_alertas_pdf(
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    return svc_relatorio_resolucao_alertas_pdf(db=db, current=current)
 
 @router.get("/dashboard-serie-temporal")
 def dashboard_serie_temporal(
     db: Session = Depends(get_db_consultorio),
     current=Depends(get_current_user_consultorio)
 ):
-    series = defaultdict(lambda: {
-        "atendimentos": 0,
-        "pa_alterada": 0,
-        "glicemia_alterada": 0,
-        "bioimpedancia_risco": 0,
-        "pico_fluxo_risco": 0,
-        "alertas_resolvidos": 0,
-    })
-
-    atendimentos = db.query(AtendimentoRapido).all()
-
-    for a in atendimentos:
-        if not a.data_atendimento:
-            continue
-
-        mes = a.data_atendimento.strftime("%Y-%m")
-        series[mes]["atendimentos"] += 1
-
-        pa = db.query(AfericaoPA).filter(
-            AfericaoPA.atendimento_rapido_id == a.id
-        ).first()
-
-        if pa and pa.classificacao in [
-            "pa_elevada",
-            "hipertensao",
-            "crise_hipertensiva"
-        ]:
-            series[mes]["pa_alterada"] += 1
-
-        glicemia = db.query(GlicemiaCapilar).filter(
-            GlicemiaCapilar.atendimento_rapido_id == a.id
-        ).first()
-
-        if glicemia and glicemia.classificacao in [
-            "alterada",
-            "possivel_diabetes"
-        ]:
-            series[mes]["glicemia_alterada"] += 1
-
-        bio = db.query(Bioimpedancia).filter(
-            Bioimpedancia.atendimento_rapido_id == a.id
-        ).first()
-
-        if bio and (
-            bio.risco_cardiometabolico in ["moderado", "alto"]
-            or bio.classificacao in [
-                "sobrepeso",
-                "obesidade_grau_1",
-                "obesidade_grau_2",
-                "obesidade_grau_3"
-            ]
-        ):
-            series[mes]["bioimpedancia_risco"] += 1
-
-        pico = db.query(PicoFluxo).filter(
-            PicoFluxo.atendimento_rapido_id == a.id
-        ).first()
-
-        if pico and pico.classificacao in [
-            "zona_amarela",
-            "zona_vermelha"
-        ]:
-            series[mes]["pico_fluxo_risco"] += 1
-
-    resolucoes = db.query(ResolucaoAlertaClinico).all()
-
-    for r in resolucoes:
-        if not r.resolvido_em:
-            continue
-
-        mes = r.resolvido_em.strftime("%Y-%m")
-        series[mes]["alertas_resolvidos"] += 1
-
-    resultado = []
-
-    for mes in sorted(series.keys()):
-        item = series[mes]
-
-        total_alteracoes = (
-            item["pa_alterada"]
-            + item["glicemia_alterada"]
-            + item["bioimpedancia_risco"]
-            + item["pico_fluxo_risco"]
-        )
-
-        taxa_resolucao = (
-            round(
-                (item["alertas_resolvidos"] / total_alteracoes) * 100,
-                2
-            )
-            if total_alteracoes > 0
-            else 0
-        )
-
-        resultado.append({
-            "mes": mes,
-            "atendimentos": item["atendimentos"],
-            "pa_alterada": item["pa_alterada"],
-            "glicemia_alterada": item["glicemia_alterada"],
-            "bioimpedancia_risco": item["bioimpedancia_risco"],
-            "pico_fluxo_risco": item["pico_fluxo_risco"],
-            "total_alteracoes": total_alteracoes,
-            "alertas_resolvidos": item["alertas_resolvidos"],
-            "taxa_resolucao": taxa_resolucao,
-        })
-
-    return resultado
+    return svc_dashboard_serie_temporal(db=db, current=current)
 
 @router.get("/classificacao-risco-populacional")
 def classificacao_risco_populacional(
     db: Session = Depends(get_db_consultorio),
     current=Depends(get_current_user_consultorio)
 ):
-    pacientes = db.query(PacienteSimplificado).all()
-
-    resultado = []
-
-    for paciente in pacientes:
-        atendimentos = db.query(AtendimentoRapido).filter(
-            AtendimentoRapido.paciente_simplificado_id == paciente.id
-        ).order_by(
-            AtendimentoRapido.data_atendimento.desc()
-        ).all()
-
-        if not atendimentos:
-            continue
-
-        ultimo = atendimentos[0]
-
-        pa = db.query(AfericaoPA).filter(
-            AfericaoPA.atendimento_rapido_id == ultimo.id
-        ).first()
-
-        glicemia = db.query(GlicemiaCapilar).filter(
-            GlicemiaCapilar.atendimento_rapido_id == ultimo.id
-        ).first()
-
-        bio = db.query(Bioimpedancia).filter(
-            Bioimpedancia.atendimento_rapido_id == ultimo.id
-        ).first()
-
-        pico = db.query(PicoFluxo).filter(
-            PicoFluxo.atendimento_rapido_id == ultimo.id
-        ).first()
-
-        reincidencia = max(len(atendimentos) - 1, 0)
-
-        classificacao = calcular_risco_populacional(
-            pa=pa,
-            glicemia=glicemia,
-            bio=bio,
-            pico=pico,
-            reincidencia_alertas=reincidencia,
-        )
-
-        resultado.append({
-            "paciente_id": paciente.id,
-            "nome": paciente.nome,
-            "idade": paciente.idade,
-            "sexo": paciente.sexo,
-
-            "risco": classificacao["risco"],
-            "score": classificacao["score"],
-            "fatores": classificacao["fatores"],
-
-            "ultimo_atendimento":
-                ultimo.data_atendimento,
-
-            "reincidencia_alertas":
-                reincidencia,
-        })
-
-    ordem = {
-        "muito_alto": 4,
-        "alto": 3,
-        "moderado": 2,
-        "baixo": 1,
-    }
-
-    resultado = sorted(
-        resultado,
-        key=lambda x: (
-            ordem.get(x["risco"], 0),
-            x["score"]
-        ),
-        reverse=True
-    )
-
-    resumo = {
-        "baixo": 0,
-        "moderado": 0,
-        "alto": 0,
-        "muito_alto": 0,
-    }
-
-    for r in resultado:
-        resumo[r["risco"]] += 1
-
-    return {
-        "total_pacientes": len(resultado),
-        "resumo": resumo,
-        "pacientes": resultado,
-    }
+    return svc_classificacao_risco_populacional(db=db, current=current)
 
 @router.get("/triagem-risco")
 def triagem_risco(
@@ -2164,89 +339,11 @@ def triagem_risco(
     data_fim: Optional[date] = None,
     db: Session = Depends(get_db_consultorio)
 ):
-    query_atendimentos = db.query(AtendimentoRapido).join(
-        PacienteSimplificado,
-        PacienteSimplificado.id == AtendimentoRapido.paciente_simplificado_id
+    return montar_triagem_risco(
+        db=db,
+        data_inicio=data_inicio,
+        data_fim=data_fim,
     )
-
-    if data_inicio:
-        query_atendimentos = query_atendimentos.filter(
-            AtendimentoRapido.data_atendimento >= data_inicio
-        )
-
-    if data_fim:
-        query_atendimentos = query_atendimentos.filter(
-            AtendimentoRapido.data_atendimento <= data_fim
-        )
-
-    atendimentos = query_atendimentos.order_by(
-        AtendimentoRapido.data_atendimento.desc()
-    ).all()
-
-    pacientes_em_risco = []
-
-    for atendimento in atendimentos:
-        paciente = db.query(PacienteSimplificado).filter(
-            PacienteSimplificado.id == atendimento.paciente_simplificado_id
-        ).first()
-
-        riscos = []
-
-        pa = db.query(AfericaoPA).filter(
-            AfericaoPA.atendimento_rapido_id == atendimento.id
-        ).first()
-
-        if pa and pa.classificacao in ["pa_elevada", "hipertensao", "crise_hipertensiva"]:
-            riscos.append(f"Pressão arterial: {pa.classificacao}")
-
-        glicemia = db.query(GlicemiaCapilar).filter(
-            GlicemiaCapilar.atendimento_rapido_id == atendimento.id
-        ).first()
-
-        if glicemia and glicemia.classificacao in ["alterada", "possivel_diabetes"]:
-            riscos.append(f"Glicemia: {glicemia.classificacao}")
-
-        bio = db.query(Bioimpedancia).filter(
-            Bioimpedancia.atendimento_rapido_id == atendimento.id
-        ).first()
-
-        if bio and bio.classificacao in [
-            "sobrepeso",
-            "obesidade_grau_1",
-            "obesidade_grau_2",
-            "obesidade_grau_3"
-        ]:
-            riscos.append(f"Bioimpedância/IMC: {bio.classificacao}")
-
-        pico = db.query(PicoFluxo).filter(
-            PicoFluxo.atendimento_rapido_id == atendimento.id
-        ).first()
-
-        if pico and pico.classificacao in ["zona_amarela", "zona_vermelha"]:
-            riscos.append(f"Pico de fluxo: {pico.classificacao}")
-
-        if riscos:
-            prioridade = definir_prioridade(riscos)
-
-            pacientes_em_risco.append({
-                "paciente_id": paciente.id if paciente else None,
-                "nome": paciente.nome if paciente else "Não informado",
-                "idade": paciente.idade if paciente else None,
-                "sexo": paciente.sexo if paciente else None,
-                "bairro": paciente.bairro if paciente else None,
-                "atendimento_id": atendimento.id,
-                "data_atendimento": atendimento.data_atendimento,
-                "tipo_servico": atendimento.tipo_servico,
-                "riscos": riscos,
-                "quantidade_riscos": len(riscos),
-                "prioridade": prioridade,
-                "sugestao": gerar_sugestao_conduta(prioridade)
-            })
-
-    return {
-        "total_pacientes_risco": len(pacientes_em_risco),
-        "pacientes": pacientes_em_risco
-    }
 
 @router.post("/agenda")
 def criar_agendamento(
@@ -2262,6 +359,37 @@ def criar_agendamento(
             detail="Não é permitido criar agendamento em data passada."
         )
 
+    tipos_validos = {"INCLUSAO", "RETIRADA", "RENOVACAO", "ADEQUACAO", "ENCERRAMENTO"}
+    prioridades_validas = {"NORMAL", "IMPORTANTE", "URGENTE"}
+
+    if dados.tipo_evento and dados.tipo_evento.upper() not in tipos_validos:
+        raise HTTPException(
+            status_code=400,
+            detail="Tipo de evento inválido. Use: INCLUSAO, RETIRADA, RENOVACAO, ADEQUACAO ou ENCERRAMENTO."
+        )
+
+    prioridade = (dados.prioridade or "NORMAL").upper()
+    if prioridade not in prioridades_validas:
+        raise HTTPException(
+            status_code=400,
+            detail="Prioridade inválida. Use: NORMAL, IMPORTANTE ou URGENTE."
+        )
+
+    medicamento_catalogo = None
+    if getattr(dados, "medicamento_id", None):
+        medicamento_catalogo = db.query(CatalogoMedicamento).filter(
+            CatalogoMedicamento.id == dados.medicamento_id,
+            CatalogoMedicamento.ativo == True
+        ).first()
+        if not medicamento_catalogo:
+            raise HTTPException(status_code=404, detail="Medicamento do catálogo não encontrado ou inativo")
+
+    data_original = dados.data_evento
+    data_ajustada_por_atendimento = None
+    if dados.data_evento and not data_tem_atendimento(dados.data_evento):
+        data_ajustada_por_atendimento = ajustar_para_proximo_dia_atendimento(dados.data_evento)
+        dados.data_evento = data_ajustada_por_atendimento
+
     if dados.data_evento:
         capacidade = calcular_capacidade_agenda(
             db=db,
@@ -2276,48 +404,35 @@ def criar_agendamento(
                 "capacidade": capacidade
             }
 
-    paciente_agenda = None
+    payload = dados.model_dump()
+    payload["tipo_evento"] = payload.get("tipo_evento", "").upper()
+    payload["prioridade"] = prioridade
 
-    if dados.paciente_id:
-        paciente_agenda = db.query(PacienteAgenda).filter(
-            PacienteAgenda.id == dados.paciente_id
-        ).first()
-
-    if not paciente_agenda:
-        paciente_agenda = obter_ou_criar_paciente_agenda(
-            db=db,
-            nome=dados.paciente_nome,
-            telefone=dados.telefone,
-            origem="agenda_manual"
-        )
-
-    paciente_id = paciente_agenda.id if paciente_agenda else dados.paciente_id
+    if medicamento_catalogo:
+        payload["medicamento"] = medicamento_catalogo.descricao_completa
 
     agenda = AgendaIntegrada(
-        **dados.model_dump(exclude={"paciente_id"}),
-        paciente_id=paciente_id
+        **payload
     )
 
     db.add(agenda)
-    db.flush()
-    db.refresh(agenda)
-
-    registrar_auditoria(
-        db=db,
-        current=current,
-        modulo="agenda",
-        acao="criacao",
-        registro_id=agenda.id,
-        descricao=f"Evento criado para {agenda.paciente_nome}"
-    )
-
     db.commit()
     db.refresh(agenda)
 
     return {
         "mensagem": "Agendamento criado com sucesso.",
         "agenda": agenda,
-        "alerta_capacidade": alerta_capacidade
+        "alerta_capacidade": alerta_capacidade,
+        "ajuste_atendimento": (
+            {
+                "data_original": data_original,
+                "data_ajustada": data_ajustada_por_atendimento,
+                "horarios": horarios_do_dia(data_ajustada_por_atendimento),
+                "mensagem": "Data ajustada automaticamente para dia de atendimento da Farmácia Escola."
+            }
+            if data_ajustada_por_atendimento
+            else None
+        )
     }
 
 @router.get("/agenda")
@@ -2676,7 +791,10 @@ def atualizar_agendamento(
         raise HTTPException(
             status_code=400,
             detail="Não é permitido reagendar para data passada."
-        )    
+        )
+
+    if agenda.data_evento and not data_tem_atendimento(agenda.data_evento):
+        agenda.data_evento = ajustar_para_proximo_dia_atendimento(agenda.data_evento)
 
     agenda.atualizado_em = datetime.utcnow()
 
@@ -2699,15 +817,6 @@ def atualizar_agendamento(
                 "mensagem": "Capacidade diária atingida para este serviço e data.",
                 "capacidade": capacidade
             }
-
-    registrar_auditoria(
-        db=db,
-        current=current,
-        modulo="agenda",
-        acao="atualizacao",
-        registro_id=agenda.id,
-        descricao=f"Agendamento atualizado para {agenda.paciente_nome}"
-    )
 
     db.commit()
     db.refresh(agenda)
@@ -2760,15 +869,6 @@ def atualizar_status_agenda(
             db=db,
             agenda_atual=agenda
         )
-
-    registrar_auditoria(
-        db=db,
-        current=current,
-        modulo="agenda",
-        acao="alteracao_status",
-        registro_id=agenda.id,
-        descricao=f"Status alterado para {agenda.status} - {agenda.paciente_nome}"
-    )
 
     db.commit()
     db.refresh(agenda)
@@ -2869,6 +969,141 @@ def executar_alertas_risco_interrupcao(
 ):
     return gerar_alertas_risco_interrupcao(db)
 
+@router.get("/alertas-pendentes")
+def alertas_pendentes(
+    db: Session = Depends(get_db_consultorio)
+):
+    return svc_alertas_pendentes(db=db)
+
+@router.get("/agenda/notificacoes")
+def buscar_notificacoes_agenda(
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    hoje = date.today()
+    amanha = hoje + timedelta(days=1)
+
+    risco_interrupcao = db.query(AgendaIntegrada).filter(
+        AgendaIntegrada.status == "risco_interrupcao_tratamento"
+    ).all()
+
+    renovacoes_urgentes = db.query(AgendaIntegrada).filter(
+        AgendaIntegrada.status == "renovacao_urgente"
+    ).all()
+
+    renovacoes_recomendadas = db.query(AgendaIntegrada).filter(
+        AgendaIntegrada.status == "renovacao_recomendada"
+    ).all()
+
+    dispensacoes_amanha = db.query(AgendaIntegrada).filter(
+        AgendaIntegrada.servico_origem == "dispensacao",
+        AgendaIntegrada.data_evento == amanha,
+        AgendaIntegrada.status == "agendado"
+    ).all()
+
+    consultas_amanha = db.query(AgendaIntegrada).filter(
+        AgendaIntegrada.servico_origem == "consultorio",
+        AgendaIntegrada.data_evento == amanha,
+        AgendaIntegrada.status == "agendado"
+    ).all()
+
+    return {
+        "resumo": {
+            "risco_interrupcao": len(risco_interrupcao),
+            "renovacoes_urgentes": len(renovacoes_urgentes),
+            "renovacoes_recomendadas": len(renovacoes_recomendadas),
+            "dispensacoes_amanha": len(dispensacoes_amanha),
+            "consultas_amanha": len(consultas_amanha),
+        },
+        "risco_interrupcao": risco_interrupcao,
+        "renovacoes_urgentes": renovacoes_urgentes,
+        "renovacoes_recomendadas": renovacoes_recomendadas,
+        "dispensacoes_amanha": dispensacoes_amanha,
+        "consultas_amanha": consultas_amanha,
+    }
+
+@router.post("/agenda/notificacoes/gerar")
+def executar_geracao_notificacoes_agenda(
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    return gerar_notificacoes_agenda(db)
+
+@router.get("/agenda/notificacoes/listar")
+def listar_notificacoes_agenda(
+    status: Optional[str] = None,
+    tipo_notificacao: Optional[str] = None,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    query = db.query(NotificacaoAgenda)
+
+    if status:
+        query = query.filter(NotificacaoAgenda.status == status)
+
+    if tipo_notificacao:
+        query = query.filter(
+            NotificacaoAgenda.tipo_notificacao == tipo_notificacao
+        )
+
+    notificacoes = query.order_by(
+        NotificacaoAgenda.data_programada.asc(),
+        NotificacaoAgenda.criado_em.desc()
+    ).all()
+
+    return {
+        "total": len(notificacoes),
+        "notificacoes": notificacoes
+    }
+
+@router.put("/agenda/notificacoes/{notificacao_id}/status")
+def atualizar_status_notificacao_agenda(
+    notificacao_id: int,
+    dados: NotificacaoAgendaUpdate,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    notificacao = db.query(NotificacaoAgenda).filter(
+        NotificacaoAgenda.id == notificacao_id
+    ).first()
+
+    if not notificacao:
+        raise HTTPException(
+            status_code=404,
+            detail="Notificação não encontrada"
+        )
+
+    for campo, valor in dados.model_dump(exclude_unset=True).items():
+        setattr(notificacao, campo, valor)
+
+        if dados.status == "enviada" and not notificacao.data_envio:
+            notificacao.data_envio = datetime.utcnow()
+            notificacao.erro_envio = None
+
+        if dados.status == "erro":
+            notificacao.tentativa_envio = (notificacao.tentativa_envio or 0) + 1
+            if not notificacao.erro_envio:
+                notificacao.erro_envio = "Erro registrado manualmente."
+
+        if dados.status == "pendente":
+            notificacao.data_envio = None
+
+        notificacao.usuario_atualizacao = (
+            getattr(current, "nome", None)
+            or getattr(current, "email", None)
+            or "sistema"
+        )
+
+        notificacao.atualizado_em = datetime.utcnow()
+
+        db.commit()
+        db.refresh(notificacao)
+
+    return {
+        "mensagem": "Status da notificação atualizado.",
+        "notificacao": notificacao
+    }
+
 @router.get("/agenda/painel-pendencias")
 def painel_pendencias_agenda(
     db: Session = Depends(get_db_consultorio),
@@ -2923,31 +1158,164 @@ def painel_pendencias_agenda(
         }
     }
 
+@router.post("/agenda/pacientes")
+def criar_paciente_agenda(
+    dados: PacienteAgendaCreate,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    existente = None
 
-# Rota migrada para routers/pacientes.py removida no pacote 5B: linhas originais 4087-4124
+    if dados.cpf:
+        existente = db.query(PacienteAgenda).filter(
+            PacienteAgenda.cpf == dados.cpf
+        ).first()
 
+    if not existente and dados.cns:
+        existente = db.query(PacienteAgenda).filter(
+            PacienteAgenda.cns == dados.cns
+        ).first()
 
-# Rota migrada para routers/pacientes.py removida no pacote 5B: linhas originais 4125-4144
+    if existente:
+        raise HTTPException(
+            status_code=409,
+            detail="Paciente já cadastrado na agenda."
+        )
 
+    paciente = PacienteAgenda(
+        **dados.model_dump(),
+        ativo=True
+    )
 
-# Rota migrada para routers/pacientes.py removida no pacote 5B: linhas originais 4145-4177
+    db.add(paciente)
+    db.commit()
+    db.refresh(paciente)
 
+    return {
+        "mensagem": "Paciente cadastrado com sucesso.",
+        "paciente": paciente
+    }
 
-# Rota migrada para routers/pacientes.py removida no pacote 5B: linhas originais 4178-4207
+@router.get("/agenda/pacientes")
+def listar_pacientes_agenda(
+    ativo: Optional[bool] = True,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    query = db.query(PacienteAgenda)
 
+    if ativo is not None:
+        query = query.filter(PacienteAgenda.ativo == ativo)
 
-# Rota migrada para routers/pacientes.py removida no pacote 5B: linhas originais 4208-4238
+    pacientes = query.order_by(
+        PacienteAgenda.nome.asc()
+    ).limit(200).all()
 
+    return {
+        "total": len(pacientes),
+        "pacientes": pacientes
+    }
 
-# Rota migrada para routers/pacientes.py removida no pacote 5B: linhas originais 4239-4258
+@router.get("/agenda/pacientes/buscar")
+def buscar_pacientes_agenda(
+    termo: str,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    termo_like = f"%{termo}%"
 
+    pacientes = db.query(PacienteAgenda).filter(
+        PacienteAgenda.ativo == True,
+        (
+            PacienteAgenda.nome.ilike(termo_like)
+            | PacienteAgenda.cpf.ilike(termo_like)
+            | PacienteAgenda.cns.ilike(termo_like)
+        )
+    ).order_by(
+        PacienteAgenda.nome.asc()
+    ).limit(50).all()
 
-# Rota migrada para routers/pacientes.py removida no pacote 5B: linhas originais 4259-4325
+    return {
+        "total": len(pacientes),
+        "pacientes": pacientes
+    }
 
+@router.put("/agenda/pacientes/{paciente_id}")
+def atualizar_paciente_agenda(
+    paciente_id: int,
+    dados: PacienteAgendaUpdate,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    paciente = db.query(PacienteAgenda).filter(
+        PacienteAgenda.id == paciente_id
+    ).first()
 
-# Rota migrada para routers/pacientes.py removida no pacote 5B: linhas originais 4326-4568
+    if not paciente:
+        raise HTTPException(
+            status_code=404,
+            detail="Paciente não encontrado."
+        )
 
+    for campo, valor in dados.model_dump(exclude_unset=True).items():
+        setattr(paciente, campo, valor)
 
+    paciente.atualizado_em = datetime.utcnow()
+
+    db.commit()
+    db.refresh(paciente)
+
+    return {
+        "mensagem": "Paciente atualizado com sucesso.",
+        "paciente": paciente
+    }
+
+@router.get("/alertas-clinicos-consolidados")
+def alertas_clinicos_consolidados(
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    return svc_alertas_clinicos_consolidados(db=db, current=current)
+
+@router.post("/alertas-clinicos/resolver")
+def resolver_alerta_clinico(
+    dados: ResolucaoAlertaClinicoCreate,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    return svc_resolver_alerta_clinico(dados=dados, db=db, current=current)
+
+@router.get("/alertas-clinicos/resolucoes")
+def listar_resolucoes_alertas_clinicos(
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    resolucoes = db.query(ResolucaoAlertaClinico).order_by(
+        ResolucaoAlertaClinico.resolvido_em.desc()
+    ).all()
+
+    return {
+        "total": len(resolucoes),
+        "resolucoes": [
+            {
+                "id": r.id,
+                "alerta_origem": r.alerta_origem,
+                "alerta_tipo": r.alerta_tipo,
+                "alerta_chave": r.alerta_chave,
+                "paciente_id": r.paciente_id,
+                "paciente_nome": r.paciente_nome,
+                "prioridade": r.prioridade,
+                "mensagem_alerta": r.mensagem_alerta,
+                "desfecho": r.desfecho,
+                "observacoes": r.observacoes,
+                "evolucao_id": r.evolucao_id,
+                "intervencao_id": r.intervencao_id,
+                "resolvido_por": r.resolvido_por,
+                "resolvido_em": r.resolvido_em,
+            }
+            for r in resolucoes
+        ]
+    }
 
 @router.get("/evolucao-risco-populacional")
 def evolucao_risco_populacional(
@@ -3070,7 +1438,7 @@ def evolucao_risco_populacional(
         "pacientes": resultado,
     }
 
-
+@router.get("/paciente-simplificado/{paciente_id}/bioimpedancia-historico")
 def historico_bioimpedancia_paciente(
     paciente_id: int,
     db: Session = Depends(get_db_consultorio),
@@ -3141,262 +1509,318 @@ def historico_bioimpedancia_paciente(
         "historico": historico
     }
 
+@router.get("/paciente-simplificado/{paciente_id}/bioimpedancia-comparativo")
+def comparativo_bioimpedancia_paciente(
+    paciente_id: int,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    historico_response = historico_bioimpedancia_paciente(
+        paciente_id=paciente_id,
+        db=db,
+        current=current
+    )
 
+    historico = historico_response.get("historico", [])
+
+    if len(historico) < 2:
+        return {
+            "comparativo_disponivel": False,
+            "mensagem": "São necessárias pelo menos duas avaliações de bioimpedância para comparação.",
+            "comparacoes": [],
+            "resumo": "Histórico insuficiente",
+            "favoraveis": 0,
+            "desfavoraveis": 0
+        }
+
+    primeira = historico[0]
+    ultima = historico[-1]
+
+    campos = [
+        ("peso", "Peso", "menor_melhor"),
+        ("imc", "IMC", "menor_melhor"),
+        ("percentual_gordura", "% gordura corporal", "menor_melhor"),
+        ("percentual_massa_muscular", "% massa muscular", "maior_melhor"),
+        ("gordura_visceral", "Gordura visceral", "menor_melhor"),
+        ("fmi", "FMI", "menor_melhor"),
+        ("ffmi", "FFMI", "maior_melhor"),
+    ]
+
+    comparacoes = []
+    favoraveis = 0
+    desfavoraveis = 0
+
+    for chave, rotulo, regra in campos:
+        valor_inicial = primeira.get(chave)
+        valor_final = ultima.get(chave)
+
+        if valor_inicial is None or valor_final is None:
+            continue
+
+        try:
+            diferenca = round(float(valor_final) - float(valor_inicial), 2)
+        except:
+            continue
+
+        if diferenca > 0:
+            tendencia = "aumento"
+        elif diferenca < 0:
+            tendencia = "redução"
+        else:
+            tendencia = "estável"
+
+        avaliacao = "neutra"
+
+        if regra == "menor_melhor":
+            if diferenca < 0:
+                avaliacao = "favoravel"
+                favoraveis += 1
+            elif diferenca > 0:
+                avaliacao = "desfavoravel"
+                desfavoraveis += 1
+
+        if regra == "maior_melhor":
+            if diferenca > 0:
+                avaliacao = "favoravel"
+                favoraveis += 1
+            elif diferenca < 0:
+                avaliacao = "desfavoravel"
+                desfavoraveis += 1
+
+        comparacoes.append({
+            "indicador": rotulo,
+            "valor_inicial": valor_inicial,
+            "valor_final": valor_final,
+            "diferenca": diferenca,
+            "tendencia": tendencia,
+            "avaliacao": avaliacao
+        })
+
+    if favoraveis > desfavoraveis:
+        resumo = "Evolução favorável"
+    elif desfavoraveis > favoraveis:
+        resumo = "Evolução desfavorável"
+    else:
+        resumo = "Evolução parcialmente favorável"
+
+    return {
+        "comparativo_disponivel": True,
+        "data_inicial": primeira.get("data"),
+        "data_final": ultima.get("data"),
+        "resumo": resumo,
+        "favoraveis": favoraveis,
+        "desfavoraveis": desfavoraveis,
+        "comparacoes": comparacoes
+    }
+
+
+@router.get("/bioimpedancia/{bioimpedancia_id}/laudo-pdf")
 def laudo_bioimpedancia_pdf(
     bioimpedancia_id: int,
     db: Session = Depends(get_db_consultorio),
     current=Depends(get_current_user_consultorio)
 ):
-    bio = db.query(Bioimpedancia).filter(
-        Bioimpedancia.id == bioimpedancia_id
+    return svc_laudo_bioimpedancia_pdf(bioimpedancia_id=bioimpedancia_id, db=db, current=current)
+
+@router.get("/paciente-simplificado/{paciente_id}/pressao-historico")
+def historico_pressao_paciente(
+    paciente_id: int,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    paciente = db.query(PacienteSimplificado).filter(
+        PacienteSimplificado.id == paciente_id
     ).first()
 
-    if not bio:
-        raise HTTPException(
-            status_code=404,
-            detail="Registro de bioimpedância não encontrado"
-        )
+    if not paciente:
+        raise HTTPException(status_code=404, detail="Paciente simplificado não encontrado")
 
-    atendimento = db.query(AtendimentoRapido).filter(
-        AtendimentoRapido.id == bio.atendimento_rapido_id
-    ).first()
+    atendimentos = db.query(AtendimentoRapido).filter(
+        AtendimentoRapido.paciente_simplificado_id == paciente_id
+    ).order_by(AtendimentoRapido.data_atendimento.asc()).all()
 
-    paciente = None
+    historico = []
 
-    if atendimento:
-        paciente = db.query(PacienteSimplificado).filter(
-            PacienteSimplificado.id == atendimento.paciente_simplificado_id
+    for atendimento in atendimentos:
+        pa = db.query(AfericaoPA).filter(
+            AfericaoPA.atendimento_rapido_id == atendimento.id
         ).first()
 
-    buffer = BytesIO()
+        if not pa:
+            continue
 
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=36,
-        leftMargin=36,
-        topMargin=36,
-        bottomMargin=36
-    )
+        historico.append({
+            "atendimento_id": atendimento.id,
+            "data": atendimento.data_atendimento,
+            "pressao_sistolica": getattr(pa, "pressao_sistolica", None),
+            "pressao_diastolica": getattr(pa, "pressao_diastolica", None),
+            "frequencia_cardiaca": getattr(pa, "frequencia_cardiaca", None),
+            "classificacao": getattr(pa, "classificacao", None),
+            "observacoes": getattr(pa, "observacoes", None),
+        })
 
-    styles = getSampleStyleSheet()
-    elementos = []
+    return {
+        "paciente": {
+            "id": paciente.id,
+            "nome": paciente.nome,
+            "idade": paciente.idade,
+            "sexo": paciente.sexo,
+            "bairro": paciente.bairro,
+        },
+        "total_afericoes": len(historico),
+        "historico": historico
+    }
 
-    elementos.append(Paragraph("FARMÁCIA ESCOLA", styles["Title"]))
-    elementos.append(Paragraph("PROFª ANA MARIA CERVANTES BARAZA", styles["Heading2"]))
-    elementos.append(Paragraph("Universidade Federal de Mato Grosso do Sul", styles["Normal"]))
-    elementos.append(Spacer(1, 14))
+@router.get("/paciente-simplificado/{paciente_id}/glicemia-historico")
+def historico_glicemia_paciente(
+    paciente_id: int,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    paciente = db.query(PacienteSimplificado).filter(
+        PacienteSimplificado.id == paciente_id
+    ).first()
 
-    elementos.append(Paragraph("Laudo de Avaliação por Bioimpedância", styles["Title"]))
-    elementos.append(Spacer(1, 12))
+    if not paciente:
+        raise HTTPException(status_code=404, detail="Paciente simplificado não encontrado")
 
-    dados_paciente = [
-        ["Campo", "Informação"],
-        ["Paciente", getattr(paciente, "nome", "Não informado")],
-        ["Idade", getattr(paciente, "idade", "Não informada")],
-        ["Sexo", getattr(paciente, "sexo", "Não informado")],
-        ["Data do atendimento", atendimento.data_atendimento.strftime("%d/%m/%Y") if atendimento and atendimento.data_atendimento else "Não informada"],
-    ]
+    atendimentos = db.query(AtendimentoRapido).filter(
+        AtendimentoRapido.paciente_simplificado_id == paciente_id
+    ).order_by(AtendimentoRapido.data_atendimento.asc()).all()
 
-    tabela_paciente = Table(dados_paciente, colWidths=[180, 320])
-    tabela_paciente.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e0f2f1")),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("PADDING", (0, 0), (-1, -1), 7),
-    ]))
+    historico = []
 
-    elementos.append(tabela_paciente)
-    elementos.append(Spacer(1, 16))
+    for atendimento in atendimentos:
+        glicemia = db.query(GlicemiaCapilar).filter(
+            GlicemiaCapilar.atendimento_rapido_id == atendimento.id
+        ).first()
 
-    dados_bio = [
-        ["Indicador", "Resultado"],
-        ["Peso", f"{bio.peso or '—'} kg"],
-        ["Altura", f"{bio.altura or '—'} m"],
-        ["IMC", f"{bio.imc or '—'}"],
-        ["Classificação IMC", bio.classificacao_imc or bio.classificacao or "Sem classificação"],
-        ["Gordura corporal", f"{bio.percentual_gordura or '—'} %"],
-        ["Massa de gordura", f"{bio.massa_gordura_kg or '—'} kg"],
-        ["Massa muscular", f"{bio.percentual_massa_muscular or '—'} %"],
-        ["Massa muscular estimada", f"{bio.massa_muscular_kg or '—'} kg"],
-        ["Massa magra estimada", f"{bio.massa_magra_kg or '—'} kg"],
-        ["Gordura visceral", bio.gordura_visceral or "—"],
-        ["Classificação gordura visceral", bio.classificacao_gordura_visceral or "Sem classificação"],
-        ["Metabolismo basal", f"{bio.metabolismo_basal or '—'} kcal"],
-        ["Fator de atividade", bio.fator_atividade or "—"],
-        ["Gasto energético total estimado", f"{bio.gasto_energetico_total or '—'} kcal/dia"],
-        ["Idade corporal", bio.idade_corporal or "—"],
-        ["Diferença idade corporal", bio.diferenca_idade_corporal or "—"],
-        ["FMI", bio.fmi or "—"],
-        ["FFMI", bio.ffmi or "—"],
-        ["Relação gordura/músculo", bio.relacao_gordura_musculo or "—"],
-        ["Risco cardiometabólico", bio.risco_cardiometabolico or "Não classificado"],
-    ]
+        if not glicemia:
+            continue
 
-    tabela_bio = Table(dados_bio, colWidths=[240, 260])
-    tabela_bio.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#fef3c7")),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("PADDING", (0, 0), (-1, -1), 7),
-    ]))
+        historico.append({
+            "atendimento_id": atendimento.id,
+            "data": atendimento.data_atendimento,
+            "valor_glicemia": getattr(glicemia, "valor_glicemia", None),
+            "tipo_jejum": getattr(glicemia, "tipo_jejum", None),
+            "classificacao": getattr(glicemia, "classificacao", None),
+            "observacoes": getattr(glicemia, "observacoes", None),
+        })
 
-    elementos.append(Paragraph("Resultados da Bioimpedância", styles["Heading2"]))
-    elementos.append(tabela_bio)
-    elementos.append(Spacer(1, 16))
+    return {
+        "paciente": {
+            "id": paciente.id,
+            "nome": paciente.nome,
+            "idade": paciente.idade,
+            "sexo": paciente.sexo,
+            "bairro": paciente.bairro,
+        },
+        "total_afericoes": len(historico),
+        "historico": historico
+    }
 
-    elementos.append(Paragraph("Interpretação automática", styles["Heading2"]))
+@router.get("/paciente-simplificado/{paciente_id}/pico-fluxo-historico")
+def historico_pico_fluxo_paciente(
+    paciente_id: int,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    paciente = db.query(PacienteSimplificado).filter(
+        PacienteSimplificado.id == paciente_id
+    ).first()
 
-    interpretacao = []
+    if not paciente:
+        raise HTTPException(status_code=404, detail="Paciente simplificado não encontrado")
 
-    if bio.classificacao_imc:
-        interpretacao.append(f"O IMC foi classificado como {bio.classificacao_imc}.")
+    atendimentos = db.query(AtendimentoRapido).filter(
+        AtendimentoRapido.paciente_simplificado_id == paciente_id
+    ).order_by(AtendimentoRapido.data_atendimento.asc()).all()
 
-    if bio.classificacao_gordura_visceral:
-        interpretacao.append(
-            f"A gordura visceral foi classificada como {bio.classificacao_gordura_visceral}."
-        )
+    historico = []
 
-    if bio.risco_cardiometabolico:
-        interpretacao.append(
-            f"O risco cardiometabólico estimado foi classificado como {bio.risco_cardiometabolico}."
-        )
+    for atendimento in atendimentos:
+        pico = db.query(PicoFluxo).filter(
+            PicoFluxo.atendimento_rapido_id == atendimento.id
+        ).first()
 
-    if bio.alertas:
-        interpretacao.append(f"Alertas clínicos: {bio.alertas}.")
+        if not pico:
+            continue
 
-    if not interpretacao:
-        interpretacao.append(
-            "Não foram gerados alertas automáticos para este registro."
-        )
+        historico.append({
+            "atendimento_id": atendimento.id,
+            "data": atendimento.data_atendimento,
+            "valor_medido": getattr(pico, "valor_medido", None),
+            "valor_previsto": getattr(pico, "valor_previsto", None),
+            "percentual_previsto": getattr(pico, "percentual_previsto", None),
+            "classificacao": getattr(pico, "classificacao", None),
+            "observacoes": getattr(pico, "observacoes", None),
+        })
 
-    for texto in interpretacao:
-        elementos.append(Paragraph(texto, styles["Normal"]))
-        elementos.append(Spacer(1, 6))
-
-    elementos.append(Spacer(1, 20))
-
-    elementos.append(Paragraph("Observações", styles["Heading2"]))
-    elementos.append(Paragraph(bio.observacoes or "Sem observações registradas.", styles["Normal"]))
-
-    elementos.append(Spacer(1, 46))
-
-    nome_profissional = getattr(current, "nome", "Farmacêutico responsável")
-    categoria = getattr(current, "categoria_profissional", "Farmacêutico")
-    crf = getattr(current, "crf", None) or "CRF: __________________"
-
-    assinatura = [
-        ["________________________________________"],
-        [nome_profissional],
-        [categoria],
-        [crf],
-    ]
-
-    tabela_assinatura = Table(assinatura, colWidths=[420])
-    tabela_assinatura.setStyle(TableStyle([
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("FONTNAME", (0, 1), (0, 1), "Helvetica-Bold"),
-        ("PADDING", (0, 0), (-1, -1), 4),
-    ]))
-
-    elementos.append(tabela_assinatura)
-
-    doc.build(elementos)
-    buffer.seek(0)
-
-    return StreamingResponse(
-        buffer,
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": "inline; filename=laudo_bioimpedancia.pdf"
-        }
-    )
+    return {
+        "paciente": {
+            "id": paciente.id,
+            "nome": paciente.nome,
+            "idade": paciente.idade,
+            "sexo": paciente.sexo,
+            "bairro": paciente.bairro,
+        },
+        "total_afericoes": len(historico),
+        "historico": historico
+    }
 
 @router.get("/relatorio-mensal")
 def relatorio_mensal_consultorio(
-    ano: int,
-    mes: int,
+    mes: int = None,
+    ano: int = None,
     db: Session = Depends(get_db_consultorio)
 ):
-    inicio = date(ano, mes, 1)
+    return svc_relatorio_mensal_consultorio(mes=mes, ano=ano, db=db)
 
-    if mes == 12:
-        fim = date(ano + 1, 1, 1)
-    else:
-        fim = date(ano, mes + 1, 1)
+@router.get("/evolucao/{evolucao_id}/desfechos")
+def listar_desfechos_clinicos(
+    evolucao_id: int,
+    db: Session = Depends(get_db_consultorio)
+):
+    evolucao = db.query(EvolucaoClinica).filter(
+        EvolucaoClinica.id == evolucao_id
+    ).first()
 
-    atendimentos_rapidos = db.query(AtendimentoRapido).filter(
-        AtendimentoRapido.data_atendimento >= inicio,
-        AtendimentoRapido.data_atendimento < fim
-    ).all()
-
-    ids_atendimentos = [a.id for a in atendimentos_rapidos]
-
-    por_tipo_servico = {}
-    for atendimento in atendimentos_rapidos:
-        tipo = atendimento.tipo_servico or "nao_informado"
-        por_tipo_servico[tipo] = por_tipo_servico.get(tipo, 0) + 1
-
-    pa_total = db.query(AfericaoPA).filter(
-        AfericaoPA.atendimento_rapido_id.in_(ids_atendimentos)
-    ).count() if ids_atendimentos else 0
-
-    pa_alterada = db.query(AfericaoPA).filter(
-        AfericaoPA.atendimento_rapido_id.in_(ids_atendimentos),
-        AfericaoPA.classificacao.in_(["pa_elevada", "hipertensao", "crise_hipertensiva"])
-    ).count() if ids_atendimentos else 0
-
-    glicemia_total = db.query(GlicemiaCapilar).filter(
-        GlicemiaCapilar.atendimento_rapido_id.in_(ids_atendimentos)
-    ).count() if ids_atendimentos else 0
-
-    glicemia_alterada = db.query(GlicemiaCapilar).filter(
-        GlicemiaCapilar.atendimento_rapido_id.in_(ids_atendimentos),
-        GlicemiaCapilar.classificacao.in_(["alterada", "possivel_diabetes"])
-    ).count() if ids_atendimentos else 0
-
-    bio_total = db.query(Bioimpedancia).filter(
-        Bioimpedancia.atendimento_rapido_id.in_(ids_atendimentos)
-    ).count() if ids_atendimentos else 0
-
-    bio_risco = db.query(Bioimpedancia).filter(
-        Bioimpedancia.atendimento_rapido_id.in_(ids_atendimentos),
-        Bioimpedancia.classificacao.in_([
-            "sobrepeso",
-            "obesidade_grau_1",
-            "obesidade_grau_2",
-            "obesidade_grau_3"
-        ])
-    ).count() if ids_atendimentos else 0
-
-    pico_total = db.query(PicoFluxo).filter(
-        PicoFluxo.atendimento_rapido_id.in_(ids_atendimentos)
-    ).count() if ids_atendimentos else 0
-
-    pico_risco = db.query(PicoFluxo).filter(
-        PicoFluxo.atendimento_rapido_id.in_(ids_atendimentos),
-        PicoFluxo.classificacao.in_(["zona_amarela", "zona_vermelha"])
-    ).count() if ids_atendimentos else 0
-
-    pacientes_convertidos = db.query(PacienteClinico).filter(
-        PacienteClinico.criado_em >= inicio,
-        PacienteClinico.criado_em < fim
-    ).count()
-
-    evolucoes = db.query(EvolucaoClinica).filter(
-        EvolucaoClinica.data_evolucao >= inicio,
-        EvolucaoClinica.data_evolucao < fim
-    ).count()
+    if not evolucao:
+        raise HTTPException(status_code=404, detail="Evolução não encontrada")
 
     desfechos = db.query(DesfechoClinico).filter(
-        DesfechoClinico.data_desfecho >= inicio,
-        DesfechoClinico.data_desfecho < fim
-    ).all()
+        DesfechoClinico.evolucao_id == evolucao_id
+    ).order_by(DesfechoClinico.data_desfecho.desc()).all()
+
+    return {
+        "evolucao_id": evolucao_id,
+        "total_desfechos": len(desfechos),
+        "desfechos": desfechos
+    }
+
+@router.get("/dashboard-desfechos")
+def dashboard_desfechos(
+    data_inicio: Optional[date] = None,
+    data_fim: Optional[date] = None,
+    db: Session = Depends(get_db_consultorio)
+):
+    query = db.query(DesfechoClinico)
+
+    if data_inicio:
+        query = query.filter(DesfechoClinico.data_desfecho >= data_inicio)
+
+    if data_fim:
+        query = query.filter(DesfechoClinico.data_desfecho <= data_fim)
+
+    desfechos = query.all()
+
+    total_desfechos = len(desfechos)
 
     melhora_clinica = {}
     adesao_tratamento = {}
 
     resolvidos = 0
+    nao_resolvidos = 0
     encaminhamentos = 0
 
     for d in desfechos:
@@ -3408,355 +1832,33 @@ def relatorio_mensal_consultorio(
 
         if d.resolucao_problema:
             resolvidos += 1
+        else:
+            nao_resolvidos += 1
 
         if d.necessidade_encaminhamento:
             encaminhamentos += 1
 
-    total_procedimentos = pa_total + glicemia_total + bio_total + pico_total
-    total_alertas_clinicos = pa_alterada + glicemia_alterada + bio_risco + pico_risco
-
     return {
-        "periodo": {
-            "ano": ano,
-            "mes": mes,
-            "inicio": inicio,
-            "fim": fim
+        "filtros_aplicados": {
+            "data_inicio": data_inicio,
+            "data_fim": data_fim
         },
-        "servicos_rapidos": {
-            "total_atendimentos": len(atendimentos_rapidos),
-            "total_procedimentos": total_procedimentos,
-            "por_tipo_servico": por_tipo_servico,
-            "pressao_arterial": {
-                "total": pa_total,
-                "alteradas": pa_alterada,
-                "percentual_alteradas": calcular_percentual(pa_alterada, pa_total)
-            },
-            "glicemia": {
-                "total": glicemia_total,
-                "alteradas": glicemia_alterada,
-                "percentual_alteradas": calcular_percentual(glicemia_alterada, glicemia_total)
-            },
-            "bioimpedancia": {
-                "total": bio_total,
-                "risco": bio_risco,
-                "percentual_risco": calcular_percentual(bio_risco, bio_total)
-            },
-            "pico_fluxo": {
-                "total": pico_total,
-                "risco": pico_risco,
-                "percentual_risco": calcular_percentual(pico_risco, pico_total)
-            },
-            "total_alertas_clinicos": total_alertas_clinicos
+        "total_desfechos": total_desfechos,
+        "melhora_clinica": melhora_clinica,
+        "adesao_tratamento": adesao_tratamento,
+        "resolucao_problema": {
+            "resolvidos": resolvidos,
+            "nao_resolvidos": nao_resolvidos,
+            "percentual_resolucao": calcular_percentual(resolvidos, total_desfechos)
         },
-        "consultorio_farmaceutico": {
-            "pacientes_convertidos_no_mes": pacientes_convertidos,
-            "evolucoes_registradas": evolucoes,
-            "desfechos_registrados": len(desfechos),
-            "melhora_clinica": melhora_clinica,
-            "adesao_tratamento": adesao_tratamento,
-            "problemas_resolvidos": resolvidos,
-            "percentual_resolucao": calcular_percentual(resolvidos, len(desfechos)),
-            "encaminhamentos": encaminhamentos,
-            "percentual_encaminhamento": calcular_percentual(encaminhamentos, len(desfechos))
+        "encaminhamentos": {
+            "total": encaminhamentos,
+            "percentual_encaminhamento": calcular_percentual(encaminhamentos, total_desfechos)
         }
     }
 
-@router.get("/paciente-clinico/{paciente_clinico_id}/pdf")
-def gerar_pdf_prontuario(
-    paciente_clinico_id: int,
-    db: Session = Depends(get_db_consultorio)
-):
-    paciente = db.query(PacienteClinico).filter(
-        PacienteClinico.id == paciente_clinico_id
-    ).first()
-
-    if not paciente:
-        raise HTTPException(status_code=404, detail="Paciente clínico não encontrado")
-
-    prontuario = db.query(ProntuarioClinico).filter(
-        ProntuarioClinico.paciente_clinico_id == paciente.id
-    ).first()
-
-    evolucoes = []
-    if prontuario:
-        evolucoes = db.query(EvolucaoClinica).filter(
-            EvolucaoClinica.prontuario_id == prontuario.id
-        ).order_by(EvolucaoClinica.data_evolucao.desc()).all()
-
-    buffer = BytesIO()
-
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=40,
-        leftMargin=40,
-        topMargin=40,
-        bottomMargin=40
-    )
-
-    styles = getSampleStyleSheet()
-    elementos = []
-
-    elementos.append(Paragraph("Prontuário Clínico Farmacêutico", styles["Title"]))
-    elementos.append(Spacer(1, 16))
-
-    dados_paciente = [
-        ["Nome", paciente.nome or ""],
-        ["Idade", str(calcular_idade(paciente.data_nascimento) or "")],
-        ["Sexo", paciente.sexo or ""],
-        ["Telefone", paciente.telefone or ""],
-        ["Bairro", paciente.bairro or ""],
-        ["CPF", paciente.cpf or ""],
-        ["CNS", paciente.cns or ""],
-        ["Origem", paciente.origem or ""],
-    ]
-
-    tabela_paciente = Table(dados_paciente, colWidths=[120, 360])
-    tabela_paciente.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#e0f2f1")),
-        ("TEXTCOLOR", (0, 0), (0, -1), colors.HexColor("#064e3b")),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
-        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("PADDING", (0, 0), (-1, -1), 8),
-    ]))
-
-    elementos.append(tabela_paciente)
-    elementos.append(Spacer(1, 18))
-
-    if prontuario:
-        elementos.append(Paragraph("Dados do prontuário", styles["Heading2"]))
-        elementos.append(Paragraph(f"Status: {prontuario.status or 'Não informado'}", styles["Normal"]))
-        elementos.append(Paragraph(f"Abertura: {prontuario.data_abertura}", styles["Normal"]))
-        elementos.append(Spacer(1, 14))
-
-    elementos.append(Paragraph("Evoluções clínicas", styles["Heading2"]))
-    elementos.append(Spacer(1, 8))
-
-    if not evolucoes:
-        elementos.append(Paragraph("Nenhuma evolução registrada.", styles["Normal"]))
-    else:
-        for evolucao in evolucoes:
-            elementos.append(Paragraph(
-                f"<b>{evolucao.tipo_atendimento or 'Evolução clínica'}</b>",
-                styles["Heading3"]
-            ))
-            elementos.append(Paragraph(f"Data: {evolucao.data_evolucao}", styles["Normal"]))
-
-            if evolucao.queixa_principal:
-                elementos.append(Paragraph(f"<b>Queixa principal:</b> {evolucao.queixa_principal}", styles["Normal"]))
-
-            if evolucao.avaliacao_farmaceutica:
-                elementos.append(Paragraph(f"<b>Avaliação farmacêutica:</b> {evolucao.avaliacao_farmaceutica}", styles["Normal"]))
-
-            if evolucao.problemas_identificados:
-                elementos.append(Paragraph(f"<b>Problemas identificados:</b> {evolucao.problemas_identificados}", styles["Normal"]))
-
-            if evolucao.conduta:
-                elementos.append(Paragraph(f"<b>Conduta:</b> {evolucao.conduta}", styles["Normal"]))
-
-            if evolucao.plano_acompanhamento:
-                elementos.append(Paragraph(f"<b>Plano:</b> {evolucao.plano_acompanhamento}", styles["Normal"]))
-
-            desfechos = db.query(DesfechoClinico).filter(
-                DesfechoClinico.evolucao_id == evolucao.id
-            ).order_by(DesfechoClinico.data_desfecho.desc()).all()
-
-            if desfechos:
-                elementos.append(Spacer(1, 6))
-                elementos.append(Paragraph("<b>Desfechos:</b>", styles["Normal"]))
-
-                for desfecho in desfechos:
-                    texto = (
-                        f"Melhora: {desfecho.melhora_clinica or 'não informado'} | "
-                        f"Adesão: {desfecho.adesao_tratamento or 'não informado'} | "
-                        f"Resolvido: {'Sim' if desfecho.resolucao_problema else 'Não'}"
-                    )
-                    elementos.append(Paragraph(texto, styles["Normal"]))
-
-                    if desfecho.resultado_observado:
-                        elementos.append(Paragraph(
-                            f"Resultado observado: {desfecho.resultado_observado}",
-                            styles["Normal"]
-                        ))
-
-            elementos.append(Spacer(1, 14))
-
-    doc.build(elementos)
-
-    buffer.seek(0)
-
-    nome_arquivo = f"prontuario_paciente_{paciente.id}.pdf"
-
-    return StreamingResponse(
-        buffer,
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": f"inline; filename={nome_arquivo}"
-        }
-    )
 
 
-@router.get("/paciente-clinico/{paciente_id}/sugestoes-plano-cuidado")
-def sugestoes_plano_cuidado(
-    paciente_id: int,
-    db: Session = Depends(get_db_consultorio),
-    current=Depends(get_current_user_consultorio)
-):
-    paciente = db.query(PacienteClinico).filter(
-        PacienteClinico.id == paciente_id
-    ).first()
-
-    if not paciente:
-        raise HTTPException(status_code=404, detail="Paciente clínico não encontrado")
-
-    achados = []
-    pontos_atencao = []
-    prioridade = "baixa"
-
-    avaliacao = avaliar_polifarmacia(
-        paciente_id=paciente.id,
-        db=db,
-        current=current
-    )
-
-    evolucao = evolucao_farmacoterapeutica(
-        paciente_id=paciente.id,
-        db=db,
-        current=current
-    )
-
-    if avaliacao.get("polifarmacia"):
-        achados.append(
-            f"Polifarmácia ({avaliacao.get('total_medicamentos')} medicamentos ativos)"
-        )
-        pontos_atencao.append("Avaliar necessidade de revisão farmacoterapêutica.")
-        prioridade = "moderada"
-
-    if avaliacao.get("risco") == "alto":
-        achados.append("Risco farmacoterapêutico alto.")
-        pontos_atencao.append("Priorizar revisão de segurança da farmacoterapia.")
-        prioridade = "alta"
-
-    if avaliacao.get("interacoes"):
-        achados.append(
-            "Possíveis interações relevantes: "
-            + ", ".join(avaliacao.get("interacoes"))
-        )
-        pontos_atencao.append("Avaliar clinicamente possíveis interações medicamentosas.")
-        prioridade = "alta"
-
-    if avaliacao.get("duplicidades"):
-        achados.append(
-            "Possíveis duplicidades terapêuticas: "
-            + ", ".join(avaliacao.get("duplicidades"))
-        )
-        pontos_atencao.append("Avaliar duplicidade terapêutica.")
-        prioridade = "alta"
-
-    if evolucao.get("baixa_adesao", 0) > 0:
-        achados.append("Baixa adesão registrada.")
-        pontos_atencao.append("Investigar barreiras de adesão e pactuar estratégias com o paciente.")
-        prioridade = "alta"
-
-    if evolucao.get("total_intervencoes", 0) >= 3:
-        achados.append(
-            f"{evolucao.get('total_intervencoes')} intervenções farmacoterapêuticas registradas."
-        )
-        pontos_atencao.append("Reavaliar efetividade das intervenções anteriores.")
-
-    if evolucao.get("encaminhamentos", 0) > 0:
-        achados.append("Há necessidade prévia de encaminhamento registrada.")
-        pontos_atencao.append("Verificar se o encaminhamento foi realizado e acompanhado.")
-
-    if not achados:
-        achados.append("Nenhum achado crítico automático identificado.")
-        pontos_atencao.append("Manter avaliação clínica individualizada.")
-
-    return {
-        "paciente_id": paciente.id,
-        "paciente": paciente.nome,
-        "prioridade": prioridade,
-        "achados": achados,
-        "pontos_atencao": pontos_atencao,
-        "observacao": (
-            "As sugestões não substituem o julgamento clínico. "
-            "Devem ser interpretadas e validadas pelo farmacêutico."
-        )
-    }    
-
-
-@router.get("/pacientes-clinicos")
-def listar_pacientes_clinicos(
-    db: Session = Depends(get_db_consultorio)
-):
-    pacientes = db.query(PacienteClinico).order_by(
-        PacienteClinico.criado_em.desc()
-    ).all()
-
-    return {
-        "total": len(pacientes),
-        "pacientes": pacientes
-    }
-
-@router.get("/buscar-paciente")
-def buscar_paciente(
-    nome: Optional[str] = None,
-    bairro: Optional[str] = None,
-    db: Session = Depends(get_db_consultorio)
-):
-    query = db.query(PacienteClinico)
-
-    if nome:
-        query = query.filter(PacienteClinico.nome.ilike(f"%{nome}%"))
-
-    if bairro:
-        query = query.filter(PacienteClinico.bairro.ilike(f"%{bairro}%"))
-
-    pacientes = query.all()
-
-    return {
-        "total": len(pacientes),
-        "pacientes": pacientes
-    }
-
-@router.get("/paciente-clinico/{paciente_id}")
-def detalhe_paciente_clinico(
-    paciente_id: int,
-    db: Session = Depends(get_db_consultorio)
-):
-    paciente = db.query(PacienteClinico).filter(
-        PacienteClinico.id == paciente_id
-    ).first()
-
-    if not paciente:
-        raise HTTPException(status_code=404, detail="Paciente não encontrado")
-
-    prontuario = db.query(ProntuarioClinico).filter(
-        ProntuarioClinico.paciente_clinico_id == paciente.id
-    ).first()
-
-    return {
-        "paciente": paciente,
-        "prontuario": prontuario
-    }
-
-
-@router.get("/relatorio-geral")
-def relatorio_geral(
-    db: Session = Depends(get_db_consultorio)
-):
-    total_pacientes = db.query(PacienteClinico).count()
-    total_prontuarios = db.query(ProntuarioClinico).count()
-    total_evolucoes = db.query(EvolucaoClinica).count()
-    total_desfechos = db.query(DesfechoClinico).count()
-
-    return {
-        "pacientes_clinicos": total_pacientes,
-        "prontuarios": total_prontuarios,
-        "evolucoes": total_evolucoes,
-        "desfechos": total_desfechos
-    }
 
 @router.post("/evolucao-farmaceutica")
 def criar_evolucao_farmaceutica(
@@ -3806,103 +1908,34 @@ def evolucao_farmaceutica_pdf(
     db: Session = Depends(get_db_consultorio),
     current=Depends(get_current_user_consultorio)
 ):
-    evolucao = db.query(EvolucaoFarmaceutica).filter(
-        EvolucaoFarmaceutica.id == evolucao_id
-    ).first()
+    return svc_evolucao_farmaceutica_pdf(evolucao_id=evolucao_id, db=db, current=current)
 
-    if not evolucao:
-        raise HTTPException(status_code=404, detail="Evolução não encontrada")
 
-    paciente = db.query(PacienteSimplificado).filter(
-        PacienteSimplificado.id == evolucao.paciente_simplificado_id
-    ).first()
+@router.get("/paciente-clinico/{paciente_clinico_id}/plano-cuidado-pdf")
+def plano_cuidado_pdf(
+    paciente_clinico_id: int,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    return svc_plano_cuidado_pdf(paciente_clinico_id=paciente_clinico_id, db=db, current=current)
 
-    buffer = BytesIO()
 
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=36,
-        leftMargin=36,
-        topMargin=36,
-        bottomMargin=36
-    )
+@router.get("/paciente-clinico/{paciente_clinico_id}/evolucoes-clinicas-pdf")
+def evolucoes_clinicas_pdf(
+    paciente_clinico_id: int,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    return svc_evolucoes_clinicas_pdf(paciente_clinico_id=paciente_clinico_id, db=db, current=current)
 
-    styles = getSampleStyleSheet()
-    elementos = []
 
-    elementos.append(Paragraph("FARMÁCIA ESCOLA", styles["Title"]))
-    elementos.append(Paragraph("Evolução Farmacêutica - Modelo SOAP", styles["Heading1"]))
-    elementos.append(Spacer(1, 14))
-
-    dados_paciente = [
-        ["Paciente", getattr(paciente, "nome", "Não informado")],
-        ["Idade", getattr(paciente, "idade", "Não informada")],
-        ["Sexo", getattr(paciente, "sexo", "Não informado")],
-        ["Data", evolucao.criado_em.strftime("%d/%m/%Y %H:%M") if evolucao.criado_em else "Não informada"],
-    ]
-
-    tabela_paciente = Table(dados_paciente, colWidths=[150, 350])
-    tabela_paciente.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
-        ("PADDING", (0, 0), (-1, -1), 7),
-    ]))
-
-    elementos.append(tabela_paciente)
-    elementos.append(Spacer(1, 16))
-
-    secoes = [
-        ("S - Subjetivo", evolucao.subjetivo),
-        ("O - Objetivo", evolucao.objetivo),
-        ("A - Avaliação farmacêutica", evolucao.avaliacao),
-        ("P - Plano de cuidado", evolucao.plano),
-        ("PRM/RNM", evolucao.prm),
-        ("Adesão", evolucao.adesao),
-        ("Metas clínicas", evolucao.metas_clinicas),
-        ("Orientações", evolucao.orientacoes),
-        ("Encaminhamento", evolucao.encaminhamento),
-        ("Risco clínico", evolucao.risco_clinico),
-        ("Observações", evolucao.observacoes),
-    ]
-
-    for titulo, texto in secoes:
-        if texto:
-            elementos.append(Paragraph(titulo, styles["Heading2"]))
-            elementos.append(Paragraph(str(texto), styles["Normal"]))
-            elementos.append(Spacer(1, 8))
-
-    elementos.append(Spacer(1, 42))
-
-    nome_profissional = getattr(current, "nome", "Farmacêutico responsável")
-    categoria = getattr(current, "categoria_profissional", "Farmacêutico")
-    crf = getattr(current, "crf", None) or "CRF: __________________"
-
-    assinatura = [
-        ["________________________________________"],
-        [nome_profissional],
-        [categoria],
-        [crf],
-    ]
-
-    tabela_assinatura = Table(assinatura, colWidths=[420])
-    tabela_assinatura.setStyle(TableStyle([
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("FONTNAME", (0, 1), (0, 1), "Helvetica-Bold"),
-        ("PADDING", (0, 0), (-1, -1), 4),
-    ]))
-
-    elementos.append(tabela_assinatura)
-
-    doc.build(elementos)
-    buffer.seek(0)
-
-    return StreamingResponse(
-        buffer,
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": "inline; filename=evolucao_farmaceutica.pdf"
-        }
-    )
+@router.get("/paciente-clinico/{paciente_clinico_id}/orientacoes-farmaceuticas-pdf")
+def orientacoes_farmaceuticas_pdf(
+    paciente_clinico_id: int,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    return svc_orientacoes_farmaceuticas_pdf(paciente_clinico_id=paciente_clinico_id, db=db, current=current)
 
 @router.post("/plano-cuidado")
 def criar_plano_cuidado(
@@ -4095,220 +2128,39 @@ def concluir_plano_cuidado(
         "plano": plano
     }    
 
-@router.get("/paciente-clinico/{paciente_id}/linha-tempo")
-def linha_tempo_clinica(
+@router.get("/paciente-simplificado/{paciente_id}/evolucoes")
+def listar_evolucoes_farmaceuticas(
     paciente_id: int,
     db: Session = Depends(get_db_consultorio),
-    current: UserConsultorio = Depends(get_current_user_consultorio)
+    current=Depends(get_current_user_consultorio)
 ):
-    paciente = db.query(PacienteClinico).filter(
-        PacienteClinico.id == paciente_id
-    ).first()
-
-    if not paciente:
-        raise HTTPException(status_code=404, detail="Paciente não encontrado")
-
-    eventos = []
-
-    prontuario = db.query(ProntuarioClinico).filter(
-        ProntuarioClinico.paciente_clinico_id == paciente_id
-    ).first()
-
-    if prontuario:
-        evolucoes = db.query(EvolucaoClinica).filter(
-            EvolucaoClinica.prontuario_id == prontuario.id
-        ).all()
-
-        for item in evolucoes:
-            eventos.append({
-                "tipo": "evolucao_clinica",
-                "data": item.data_evolucao or item.criado_em,
-                "titulo": item.tipo_atendimento or "Evolução clínica",
-                "descricao": item.queixa_principal,
-                "detalhes": {
-                    "avaliacao": item.avaliacao_farmaceutica,
-                    "conduta": item.conduta,
-                    "orientacoes": item.orientacoes_realizadas,
-                    "plano": item.plano_acompanhamento,
-                }
-            })
-
-            desfechos_clinicos = db.query(DesfechoClinico).filter(
-                DesfechoClinico.evolucao_id == item.id
-            ).all()
-
-            for desfecho in desfechos_clinicos:
-                eventos.append({
-                    "tipo": "desfecho_clinico",
-                    "data": desfecho.data_desfecho or desfecho.criado_em,
-                    "titulo": "Desfecho clínico",
-                    "descricao": desfecho.resultado_observado or desfecho.observacoes,
-                    "detalhes": {
-                        "melhora": desfecho.melhora_clinica,
-                        "adesao": desfecho.adesao_tratamento,
-                        "resolvido": desfecho.resolucao_problema,
-                        "encaminhamento": desfecho.necessidade_encaminhamento,
-                    }
-                })
-
-    intervencoes = db.query(IntervencaoFarmacoterapia).filter(
-        IntervencaoFarmacoterapia.paciente_clinico_id == paciente_id
+    evolucoes = db.query(EvolucaoFarmaceutica).filter(
+        EvolucaoFarmaceutica.paciente_simplificado_id == paciente_id
+    ).order_by(
+        EvolucaoFarmaceutica.criado_em.desc()
     ).all()
 
-    for item in intervencoes:
-        eventos.append({
-            "tipo": "intervencao_farmacoterapeutica",
-            "data": item.criado_em,
-            "titulo": item.tipo_intervencao,
-            "descricao": item.descricao,
-            "detalhes": {
-                "conduta": item.conduta,
-                "aceita": item.aceita_pelo_paciente,
-                "encaminhamento": item.necessidade_encaminhamento,
-                "observacoes": item.observacoes,
-            }
-        })
-
-        desfechos = db.query(DesfechoIntervencaoFarmacoterapia).filter(
-            DesfechoIntervencaoFarmacoterapia.intervencao_id == item.id
-        ).all()
-
-        for desfecho in desfechos:
-            eventos.append({
-                "tipo": "desfecho_clinico",
-                "data": desfecho.criado_em,
-                "titulo": desfecho.status_desfecho,
-                "descricao": desfecho.resultado_observado or desfecho.observacoes,
-                "detalhes": {
-                    "nova_intervencao": desfecho.necessidade_nova_intervencao,
-                }
-            })
-
-    medicamentos = db.query(MedicamentoUso).filter(
-        MedicamentoUso.paciente_clinico_id == paciente_id,
-        MedicamentoUso.ativo == True
-    ).all()
-
-    for item in medicamentos:
-        descricao = " ".join(
-            parte for parte in [item.dose, item.via, item.frequencia]
-            if parte
-        )
-
-        eventos.append({
-            "tipo": "farmacoterapia",
-            "data": item.criado_em,
-            "titulo": item.nome_medicamento,
-            "descricao": descricao,
-            "detalhes": {
-                "indicacao": item.indicacao,
-                "adesao": item.adesao_referida,
-                "observacoes": item.observacoes,
-            }
-        })
-
-    eventos_ordenados = sorted(
-        eventos,
-        key=lambda x: x.get("data") or datetime.min,
-        reverse=True
-    )
-
-    return {
-        "paciente": {
-            "id": paciente.id,
-            "nome": paciente.nome,
-            "idade": paciente.idade,
-            "sexo": paciente.sexo,
-        },
-        "total_eventos": len(eventos_ordenados),
-        "eventos": eventos_ordenados,
-    }
+    return [
+        {
+            "id": e.id,
+            "subjetivo": e.subjetivo,
+            "objetivo": e.objetivo,
+            "avaliacao": e.avaliacao,
+            "plano": e.plano,
+            "prm": e.prm,
+            "adesao": e.adesao,
+            "metas_clinicas": e.metas_clinicas,
+            "orientacoes": e.orientacoes,
+            "encaminhamento": e.encaminhamento,
+            "risco_clinico": e.risco_clinico,
+            "observacoes": e.observacoes,
+            "criado_em": e.criado_em,
+        }
+        for e in evolucoes
+    ]
 
 
-def aplicar_filtros_atendimento(
-    query,
-    data_inicio: Optional[date],
-    data_fim: Optional[date],
-    tipo_servico: Optional[str],
-    sexo: Optional[str],
-    bairro: Optional[str],
-    idade_min: Optional[int],
-    idade_max: Optional[int]
-):
-    if data_inicio:
-        query = query.filter(AtendimentoRapido.data_atendimento >= data_inicio)
 
-    if data_fim:
-        query = query.filter(AtendimentoRapido.data_atendimento <= data_fim)
-
-    if tipo_servico:
-        query = query.filter(AtendimentoRapido.tipo_servico == tipo_servico)
-
-    if sexo:
-        query = query.filter(PacienteSimplificado.sexo == sexo)
-
-    if bairro:
-        query = query.filter(PacienteSimplificado.bairro.ilike(f"%{bairro}%"))
-
-    if idade_min is not None:
-        query = query.filter(PacienteSimplificado.idade >= idade_min)
-
-    if idade_max is not None:
-        query = query.filter(PacienteSimplificado.idade <= idade_max)
-
-    return query
-
-
-def dashboard_vazio():
-    return {
-        "filtros_aplicados": {},
-        "total_atendimentos_rapidos": 0,
-        "total_procedimentos": 0,
-        "por_tipo_servico": {},
-        "pressao_arterial": {"total": 0, "alterados": 0, "percentual_alterados": 0},
-        "glicemia": {"total": 0, "alterados": 0, "percentual_alterados": 0},
-        "bioimpedancia": {"total": 0, "risco": 0, "percentual_risco": 0},
-        "pico_fluxo": {"total": 0, "risco": 0, "percentual_risco": 0}
-    }
-
-
-def calcular_percentual(parte: int, total: int) -> float:
-    if total == 0:
-        return 0
-    return round((parte / total) * 100, 2)
-
-
-def classificar_pa(pas: int, pad: int) -> str:
-    if pas >= 180 or pad >= 120:
-        return "crise_hipertensiva"
-    if pas >= 140 or pad >= 90:
-        return "hipertensao"
-    if pas >= 120 or pad >= 80:
-        return "pa_elevada"
-    return "normal"
-
-
-def classificar_glicemia(valor: int, tipo_jejum: Optional[str]) -> str:
-    if tipo_jejum and tipo_jejum.lower() == "jejum":
-        if valor < 100:
-            return "normal"
-        if valor <= 125:
-            return "alterada"
-        return "possivel_diabetes"
-
-    if valor < 140:
-        return "normal"
-    if valor <= 199:
-        return "alterada"
-    return "possivel_diabetes"
-
-
-def classificar_pico_fluxo(percentual: float) -> str:
-    if percentual >= 80:
-        return "zona_verde"
-    if percentual >= 50:
-        return "zona_amarela"
-    return "zona_vermelha"
 
 @router.get("/fila-clinica")
 def fila_clinica(
@@ -4422,327 +2274,10 @@ def fila_clinica(
     return fila
 
 
-@router.get("/dashboard-epidemiologico")
-def dashboard_epidemiologico(
-    db: Session = Depends(get_db_consultorio),
-    current=Depends(get_current_user_consultorio)
-):
-    pacientes = db.query(PacienteClinico).all()
 
-    total = len(pacientes)
 
-    if total == 0:
-        return {
-            "total_pacientes": 0,
-            "sexo": {},
-            "faixa_etaria": {},
-            "principais_cids": {},
-            "bairros": {}
-        }
 
-    sexo = {}
-    faixa_etaria = {}
-    principais_cids = {}
-    bairros = {}
 
-    for p in pacientes:
-
-        # SEXO
-        sexo_key = p.sexo or "Não informado"
-        sexo[sexo_key] = sexo.get(sexo_key, 0) + 1
-
-        # IDADE
-        idade = p.idade or 0
-
-        if idade < 12:
-            faixa = "0-11"
-        elif idade < 18:
-            faixa = "12-17"
-        elif idade < 40:
-            faixa = "18-39"
-        elif idade < 60:
-            faixa = "40-59"
-        else:
-            faixa = "60+"
-
-        faixa_etaria[faixa] = faixa_etaria.get(faixa, 0) + 1
-
-        # CID
-        cid = p.cid_principal or "Não informado"
-        principais_cids[cid] = principais_cids.get(cid, 0) + 1
-
-        # BAIRRO
-        bairro = p.bairro or "Não informado"
-        bairros[bairro] = bairros.get(bairro, 0) + 1
-
-    principais_cids = dict(
-        sorted(
-            principais_cids.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )[:10]
-    )
-
-    bairros = dict(
-        sorted(
-            bairros.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )[:10]
-    )
-
-    return {
-        "total_pacientes": total,
-        "sexo": sexo,
-        "faixa_etaria": faixa_etaria,
-        "principais_cids": principais_cids,
-        "bairros": bairros
-    }
-
-@router.get("/dashboard-antropometrico")
-def dashboard_antropometrico(
-    db: Session = Depends(get_db_consultorio),
-    current=Depends(get_current_user_consultorio)
-):
-    registros = db.query(Bioimpedancia).all()
-
-    total = len(registros)
-
-    if total == 0:
-        return {
-            "total_avaliacoes": 0,
-            "media_imc": 0,
-            "media_peso": 0,
-            "media_gordura_corporal": 0,
-            "media_massa_muscular": 0,
-            "media_gordura_visceral": 0,
-            "classificacoes_imc": {},
-            "classificacoes_gordura_visceral": {}
-        }
-
-    imcs = []
-    pesos = []
-    gorduras = []
-    massas = []
-    viscerais = []
-
-    classificacoes_imc = {}
-    classificacoes_gordura_visceral = {}
-
-    for r in registros:
-        if getattr(r, "imc", None) is not None:
-            imcs.append(r.imc)
-
-        if getattr(r, "peso", None) is not None:
-            pesos.append(r.peso)
-
-        if getattr(r, "percentual_gordura", None) is not None:
-            gorduras.append(r.percentual_gordura)
-
-        if getattr(r, "percentual_massa_muscular", None) is not None:
-            massas.append(r.percentual_massa_muscular)
-
-        if getattr(r, "gordura_visceral", None) is not None:
-            viscerais.append(r.gordura_visceral)
-
-        classe_imc = getattr(r, "classificacao_imc", None) or "não_classificado"
-        classificacoes_imc[classe_imc] = classificacoes_imc.get(classe_imc, 0) + 1
-
-        classe_visceral = (
-            getattr(r, "classificacao_gordura_visceral", None)
-            or "não_classificado"
-        )
-
-        classificacoes_gordura_visceral[classe_visceral] = (
-            classificacoes_gordura_visceral.get(classe_visceral, 0) + 1
-        )
-
-    return {
-        "total_avaliacoes": total,
-        "media_imc": round(sum(imcs) / len(imcs), 2) if imcs else 0,
-        "media_peso": round(sum(pesos) / len(pesos), 2) if pesos else 0,
-        "media_gordura_corporal": round(sum(gorduras) / len(gorduras), 2) if gorduras else 0,
-        "media_massa_muscular": round(sum(massas) / len(massas), 2) if massas else 0,
-        "media_gordura_visceral": round(sum(viscerais) / len(viscerais), 2) if viscerais else 0,
-        "classificacoes_imc": classificacoes_imc,
-        "classificacoes_gordura_visceral": classificacoes_gordura_visceral
-    }
-
-@router.get("/dashboard-cardiovascular")
-def dashboard_cardiovascular(
-    db: Session = Depends(get_db_consultorio),
-    current=Depends(get_current_user_consultorio)
-):
-    afericoes = db.query(AfericaoPA).all()
-
-    total = len(afericoes)
-
-    if total == 0:
-        return {
-            "total_afericoes": 0,
-            "media_pas": 0,
-            "media_pad": 0,
-            "classificacoes": {}
-        }
-
-    soma_pas = 0
-    soma_pad = 0
-
-    classificacoes = {
-        "normal": 0,
-        "pa_elevada": 0,
-        "hipertensao": 0,
-        "crise_hipertensiva": 0,
-    }
-
-    for a in afericoes:
-        soma_pas += a.pressao_sistolica or 0
-        soma_pad += a.pressao_diastolica or 0
-
-        classe = a.classificacao or "não_classificado"
-        classificacoes[classe] = classificacoes.get(classe, 0) + 1
-
-    return {
-        "total_afericoes": total,
-        "media_pas": round(soma_pas / total, 2),
-        "media_pad": round(soma_pad / total, 2),
-        "classificacoes": classificacoes
-    }
-
-@router.get("/dashboard-glicemico")
-def dashboard_glicemico(
-    db: Session = Depends(get_db_consultorio),
-    current=Depends(get_current_user_consultorio)
-):
-    registros = db.query(GlicemiaCapilar).all()
-
-    total = len(registros)
-
-    if total == 0:
-        return {
-            "total_afericoes": 0,
-            "media_glicemia": 0,
-            "classificacoes": {},
-            "tipos_jejum": {}
-        }
-
-    valores = []
-    classificacoes = {}
-    tipos_jejum = {}
-
-    for r in registros:
-        if getattr(r, "valor_glicemia", None) is not None:
-            valores.append(r.valor_glicemia)
-
-        classe = getattr(r, "classificacao", None) or "não_classificado"
-        classificacoes[classe] = classificacoes.get(classe, 0) + 1
-
-        tipo = getattr(r, "tipo_jejum", None) or "não_informado"
-        tipos_jejum[tipo] = tipos_jejum.get(tipo, 0) + 1
-
-    return {
-        "total_afericoes": total,
-        "media_glicemia": round(sum(valores) / len(valores), 2) if valores else 0,
-        "classificacoes": classificacoes,
-        "tipos_jejum": tipos_jejum
-    }
-
-@router.get("/dashboard-efetividade-cuidado")
-def dashboard_efetividade_cuidado(
-    db: Session = Depends(get_db_consultorio),
-    current=Depends(get_current_user_consultorio)
-):
-    planos = db.query(PlanoCuidado).all()
-
-    total = len(planos)
-
-    ativos = len([
-        p for p in planos
-        if p.status in ["pendente", "em_acompanhamento"]
-    ])
-
-    concluidos = len([
-        p for p in planos
-        if p.status == "concluido"
-    ])
-
-    cancelados = len([
-        p for p in planos
-        if p.status == "cancelado"
-    ])
-
-    atingidos = len([
-        p for p in planos
-        if p.resultado_classificacao == "atingido"
-    ])
-
-    parcialmente = len([
-        p for p in planos
-        if p.resultado_classificacao == "parcialmente_atingido"
-    ])
-
-    nao_atingidos = len([
-        p for p in planos
-        if p.resultado_classificacao == "nao_atingido"
-    ])
-
-    taxa_sucesso = (
-        round((atingidos / concluidos) * 100, 2)
-        if concluidos > 0
-        else 0
-    )
-
-    distribuicao_problemas = {}
-
-    for plano in planos:
-        problema = (
-            plano.problema_identificado
-            or "Não informado"
-        )
-
-        distribuicao_problemas[problema] = (
-            distribuicao_problemas.get(problema, 0) + 1
-        )
-
-    tempo_medio = 0
-
-    tempos = []
-
-    for plano in planos:
-        if plano.concluido_em and plano.criado_em:
-            dias = (
-                plano.concluido_em.date()
-                - plano.criado_em.date()
-            ).days
-
-            tempos.append(dias)
-
-    if tempos:
-        tempo_medio = round(
-            sum(tempos) / len(tempos),
-            1
-        )
-
-    return {
-        "planos": {
-            "total": total,
-            "ativos": ativos,
-            "concluidos": concluidos,
-            "cancelados": cancelados,
-        },
-
-        "resultados": {
-            "atingidos": atingidos,
-            "parcialmente_atingidos": parcialmente,
-            "nao_atingidos": nao_atingidos,
-        },
-
-        "taxa_sucesso": taxa_sucesso,
-
-        "tempo_medio_conclusao_dias": tempo_medio,
-
-        "problemas": distribuicao_problemas,
-    }
 
 
 

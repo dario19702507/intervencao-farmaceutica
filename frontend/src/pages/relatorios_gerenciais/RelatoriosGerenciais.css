@@ -1,0 +1,23 @@
+.rg-page { padding: 24px; display: flex; flex-direction: column; gap: 18px; }
+.rg-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.rg-header h1 { margin: 0 0 6px; font-size: 28px; }
+.rg-header p, .rg-muted { color: #64748b; margin: 0; }
+.rg-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.rg-actions button, .rg-primary { border: 0; background: #0f766e; color: white; padding: 10px 14px; border-radius: 10px; cursor: pointer; font-weight: 600; }
+.rg-actions button:nth-child(1) { background: #15803d; }
+.rg-actions button:nth-child(2) { background: #2563eb; }
+.rg-filters { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; background: white; padding: 16px; border: 1px solid #e2e8f0; border-radius: 16px; }
+.rg-filters label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 700; color: #334155; }
+.rg-filters input, .rg-filters select { min-width: 190px; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; }
+.rg-section { background: white; border: 1px solid #e2e8f0; border-radius: 16px; padding: 18px; }
+.rg-section h2, .rg-section h3 { margin: 0 0 12px; }
+.rg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-top: 14px; }
+.rg-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+.rg-card span { color: #475569; text-transform: capitalize; font-size: 13px; }
+.rg-card strong { font-size: 26px; color: #0f172a; }
+.rg-table-wrap { overflow-x: auto; }
+.rg-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rg-table th, .rg-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+.rg-table th { background: #f8fafc; color: #334155; text-transform: capitalize; }
+.rg-error { background: #fee2e2; color: #991b1b; padding: 12px 14px; border-radius: 12px; }
+@media (max-width: 760px) { .rg-header { flex-direction: column; } .rg-filters input, .rg-filters select { min-width: 100%; } }
