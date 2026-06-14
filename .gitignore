@@ -35,3 +35,4 @@ backups/
 !backup_database.py
 !restore_database.py
 !README_BACKUP.md
+intervencao-farmaceutica/ 
