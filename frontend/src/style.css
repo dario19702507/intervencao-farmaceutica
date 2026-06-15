@@ -2275,57 +2275,119 @@ button {
   }
 }
 
-.form-grid.two-columns {
+/* Passo 15D.2 — Pacientes CEAF no menu Pacientes */
+.pacientes-ceaf-page .summary-card small,
+.table-subtext,
+.helper-text {
+  display: block;
+  color: #64748b;
+  font-size: 0.82rem;
+  margin-top: 4px;
+}
+
+.ceaf-summary-grid {
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+}
+
+.ceaf-filters-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  grid-template-columns: repeat(5, minmax(170px, 1fr));
   gap: 14px;
 }
 
-.form-grid label {
+.ceaf-filters-row label {
   display: grid;
-  gap: 7px;
+  gap: 6px;
   color: #334155;
-  font-size: 13px;
   font-weight: 700;
 }
 
-.button-row,
-.table-actions {
+.ceaf-filters-row input,
+.ceaf-filters-row select {
+  width: 100%;
+  border: 1px solid #dbe7eb;
+  border-radius: 12px;
+  padding: 11px 12px;
+  background: #f8fafc;
+  color: #0f172a;
+  font: inherit;
+}
+
+.ceaf-filters-row input:focus,
+.ceaf-filters-row select:focus {
+  outline: 2px solid #99f6e4;
+  border-color: #0f766e;
+  background: #ffffff;
+}
+
+.ceaf-pagination-actions,
+.action-buttons {
   display: flex;
-  align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-}
-
-.badge {
-  display: inline-flex;
   align-items: center;
-  min-height: 28px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  background: #eefcf8;
-  color: #0f766e;
-  border: 1px solid #cfe5e2;
-  font-size: 12px;
-  font-weight: 700;
 }
 
-.alert-card.warning {
-  border-left: 5px solid #f59e0b;
-  background: #fffbeb;
-  color: #92400e;
-  padding: 14px 16px;
+.ceaf-table-wrapper {
+  overflow-x: auto;
 }
 
-.alert-card.success {
-  border-left: 5px solid #22c55e;
-  background: #f0fdf4;
-  color: #166534;
-  padding: 14px 16px;
+.ceaf-table {
+  min-width: 980px;
 }
 
-@media (max-width: 760px) {
-  .form-grid.two-columns {
+.ceaf-table td {
+  vertical-align: top;
+}
+
+.ceaf-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.ceaf-detail-grid > div {
+  border: 1px solid #e2edf0;
+  border-radius: 14px;
+  background: #f8fafc;
+  padding: 12px;
+  display: grid;
+  gap: 5px;
+}
+
+.ceaf-detail-grid strong {
+  color: #334155;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.ceaf-detail-grid span {
+  color: #0f172a;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.ceaf-detail-grid .wide {
+  grid-column: span 2;
+}
+
+@media (max-width: 1100px) {
+  .ceaf-summary-grid,
+  .ceaf-filters-row,
+  .ceaf-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .ceaf-summary-grid,
+  .ceaf-filters-row,
+  .ceaf-detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .ceaf-detail-grid .wide {
+    grid-column: span 1;
   }
 }

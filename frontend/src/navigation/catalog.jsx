@@ -22,6 +22,7 @@ const ServicosRapidosPage = lazy(() => import("../pages/servicos/ServicosRapidos
 const ConsultorioPage = lazy(() => import("../pages/consultorio/Consultorio.jsx"));
 const FilaClinicaPage = lazy(() => import("../pages/fila/FilaClinica.jsx"));
 const PacientesPage = lazy(() => import("../pages/pacientes/Pacientes.jsx"));
+const PacientesCeafPage = lazy(() => import("../pages/pacientes/PacientesCeaf.jsx"));
 
 const AgendaWorkspacePage = lazy(() => import("../pages/agenda/AgendaWorkspace.jsx"));
 
@@ -31,7 +32,6 @@ const RelatoriosPage = lazy(() => import("../pages/relatorios/Relatorios.jsx"));
 const PainelOperacionalPage = lazy(() => import("../pages/operacional/PainelOperacional.jsx"));
 const AnalyticsWorkspacePage = lazy(() => import("../pages/analytics/AnalyticsWorkspace.jsx"));
 const PerfilProfissionalPage = lazy(() => import("../pages/perfil/PerfilProfissional.jsx"));
-const UsuariosPerfisPage = lazy(() => import("../pages/sistema/UsuariosPerfis.jsx"));
 
 const ALL = ["*"];
 const WRITE_ASSISTENCIAL = ["admin", "farmaceutico", "estagiario"];
@@ -121,6 +121,21 @@ export const ROUTES = [
     telemetryKey: "atendimento_pacientes",
     legacyKeys: ["pacientes"],
     redirectFrom: ["/pacientes", "/atendimento"],
+  },
+
+  {
+    key: "pacientes-ceaf",
+    path: "/atendimento/pacientes-ceaf",
+    label: "Pacientes CEAF",
+    section: "atendimento",
+    icon: FileSpreadsheet,
+    title: "Pacientes CEAF",
+    subtitle: "Cadastro importado do CEAF para conferência, vigência de LME e preparação do acompanhamento farmacêutico.",
+    component: PacientesCeafPage,
+    permissions: { view: ALL, write: WRITE_GESTAO },
+    telemetryKey: "atendimento_pacientes_ceaf",
+    legacyKeys: ["pacientes-ceaf", "ceaf", "cadastro-ceaf"],
+    redirectFrom: ["/pacientes-ceaf", "/ceaf", "/atendimento/ceaf"],
   },
   {
     key: "agenda",
@@ -214,21 +229,6 @@ export const ROUTES = [
       "/inteligencia/relatorios"
     ],
   },
-
-  {
-    key: "usuarios-perfis",
-    path: "/sistema/usuarios",
-    label: "Usuários e Perfis",
-    section: "sistema",
-    icon: Users,
-    title: "Usuários e Perfis",
-    subtitle: "Cadastro único de usuários e permissões por módulo.",
-    component: UsuariosPerfisPage,
-    permissions: { view: ["admin"], write: ["admin"] },
-    telemetryKey: "sistema_usuarios_perfis",
-    legacyKeys: ["usuarios", "perfis", "administracao-usuarios"],
-    redirectFrom: ["/usuarios", "/perfis", "/sistema/administracao"],
-  },
   {
     key: "perfil-profissional",
     path: "/sistema/perfil",
@@ -247,11 +247,11 @@ export const ROUTES = [
 
 export const SIDEBAR_SECTIONS = [
   { key: "inicio", label: "Início", items: ["dashboard", "painel-operacional"] },
-  { key: "atendimento", label: "Atendimento", items: ["servicos", "consultorio", "fila-clinica", "pacientes"] },
+  { key: "atendimento", label: "Atendimento", items: ["servicos", "consultorio", "fila-clinica", "pacientes", "pacientes-ceaf"] },
   { key: "agenda", label: "Agenda e Comunicação", items: ["agenda"] },
   { key: "documentos", label: "Documentos", items: ["documentos", "impressao"] },
   { key: "inteligencia", label: "Inteligência", items: ["analytics"] },
-  { key: "sistema", label: "Sistema", items: ["usuarios-perfis", "perfil-profissional"] },
+  { key: "sistema", label: "Sistema", items: ["perfil-profissional"] },
 ];
 
 export const ROUTES_BY_KEY = Object.fromEntries(ROUTES.map((route) => [route.key, route]));
