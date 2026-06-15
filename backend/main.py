@@ -45,21 +45,15 @@ from routers.indicadores_consultorio import router as indicadores_consultorio_ro
 from routers.dashboard_notificacoes import router as dashboard_notificacoes_router
 from routers.farmacoterapia import router as farmacoterapia_router
 from routers.indicadores_cientificos import router as indicadores_cientificos_router
+from routers.ceaf import router as ceaf_router
 from database import SessionLocal, get_db
 from auth import ALGORITHM, SECRET_KEY, create_access_token, hash_password, oauth2_scheme, verify_password
-from permissions import (
-    exigir_admin as perm_exigir_admin,
-    exigir_pode_escrever,
-    obter_perfil,
-    obter_permissoes_modulos,
-    usuario_eh_leitura_restrita,
-    validar_perfil_usuario,
-)
+from permissions import exigir_admin as perm_exigir_admin, exigir_pode_escrever, usuario_eh_leitura_restrita, validar_perfil_usuario, obter_perfil
 from models.core import User, Intervencao
 from models.consultorio_models import AuditoriaSistema
 from schemas.core import (
     Token, UserOut, PasswordReset, ChangeOwnPassword, InativarPayload,
-    IntervencaoCreate, IntervencaoOut, Indicadores, UserCreate, UserUpdate,
+    IntervencaoCreate, IntervencaoOut, Indicadores, UserCreate,
 )
 from migrations import aplicar_migracoes_simples
 
@@ -96,6 +90,7 @@ app.include_router(indicadores_consultorio_router)
 app.include_router(dashboard_notificacoes_router)
 app.include_router(farmacoterapia_router)
 app.include_router(indicadores_cientificos_router)
+app.include_router(ceaf_router)
 app.include_router(consultorio_router)
 
 
@@ -280,18 +275,6 @@ def ensure_can_edit(user: User, item: Intervencao):
         return
     if user.categoria_profissional == "Estagiário" and item.profissional_id != user.id:
         raise HTTPException(status_code=403, detail="Estagiário só pode editar os próprios registros")
-
-
-def user_to_out(user: User) -> UserOut:
-    """Serializa usuário único com permissões consolidadas por módulo."""
-    return UserOut(
-        id=user.id,
-        nome=user.nome,
-        email=user.email,
-        perfil=obter_perfil(user),
-        categoria_profissional=user.categoria_profissional,
-        permissoes=obter_permissoes_modulos(user.perfil),
-    )
 def mascarar_nome(nome: str):
     partes = nome.split()
     mascarado = []
@@ -354,55 +337,22 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), current: Use
         categoria_profissional=payload.categoria_profissional
     )
     db.add(user); db.commit(); db.refresh(user)
-    return user_to_out(user)
+    return user
 
 @app.get("/users", response_model=List[UserOut])
 def list_users(db: Session = Depends(get_db), current: User = Depends(get_current_user)):
     ensure_admin(current)
-    return [user_to_out(user) for user in db.query(User).order_by(User.nome.asc()).all()]
-
-@app.put("/users/{user_id}", response_model=UserOut)
-def update_user(
-    user_id: int,
-    payload: UserUpdate,
-    db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
-):
-    ensure_admin(current)
-
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
-
-    if payload.email and payload.email != user.email:
-        existente = db.query(User).filter(User.email == payload.email).first()
-        if existente:
-            raise HTTPException(status_code=400, detail="E-mail já cadastrado")
-        user.email = payload.email.strip().lower()
-
-    if payload.nome is not None:
-        user.nome = payload.nome.strip()
-
-    if payload.perfil is not None:
-        user.perfil = validar_perfil_usuario(payload.perfil)
-
-    if payload.categoria_profissional is not None:
-        user.categoria_profissional = payload.categoria_profissional.strip()
-
-    db.commit()
-    db.refresh(user)
-    return user_to_out(user)
+    return db.query(User).order_by(User.nome.asc()).all()
 
 @app.get("/profissionais", response_model=List[UserOut])
 def listar_profissionais(db: Session = Depends(get_db), current: User = Depends(get_current_user)):
-    return [user_to_out(user) for user in db.query(User).order_by(User.nome.asc()).all()]
+    return db.query(User).order_by(User.nome.asc()).all()
 
 @app.get("/supervisores", response_model=List[UserOut])
 def listar_supervisores(db: Session = Depends(get_db), current: User = Depends(get_current_user)):
-    users = db.query(User).filter(
+    return db.query(User).filter(
         User.categoria_profissional.in_(["Farmacêutico", "Técnico", "Docente"])
     ).order_by(User.nome.asc()).all()
-    return [user_to_out(user) for user in users]
 
 @app.put("/users/{user_id}/password", response_model=UserOut)
 def reset_user_password(
@@ -421,11 +371,11 @@ def reset_user_password(
     db.commit()
     db.refresh(user)
 
-    return user_to_out(user)
+    return user
 
 @app.get("/me", response_model=UserOut)
 def me(current: User = Depends(get_current_user)):
-    return user_to_out(current)
+    return current
 
 @app.put("/me/password")
 def change_own_password(

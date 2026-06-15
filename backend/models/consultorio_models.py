@@ -11,6 +11,43 @@ from sqlalchemy.orm import declarative_base, relationship
 
 BaseConsultorio = declarative_base()
 
+class PacienteCEAF(BaseConsultorio):
+    """Cadastro importado do CEAF para preparação da homologação.
+
+    Esta tabela é intencionalmente separada de pacientes_clinicos. O objetivo é
+    preservar a planilha original, permitir conferência/deduplicação e evitar
+    sobrescrever prontuários clínicos já existentes.
+    """
+
+    __tablename__ = "pacientes_ceaf"
+
+    id = Column(Integer, primary_key=True, index=True)
+    chave_importacao = Column(String(80), unique=True, index=True, nullable=False)
+    lote_importacao = Column(String(80), index=True, nullable=True)
+
+    cns = Column(String, nullable=True, index=True)
+    cpf = Column(String, nullable=True, index=True)
+    nome = Column(String, nullable=False, index=True)
+
+    medicamento_prescrito = Column(Text, nullable=True)
+    municipio = Column(String, nullable=True, index=True)
+    logradouro = Column(String, nullable=True)
+    numero_residencia = Column(String, nullable=True)
+    complemento_residencia = Column(String, nullable=True)
+
+    data_fim_vigencia = Column(Date, nullable=True, index=True)
+    situacao_lme = Column(String, nullable=True, index=True)
+    data_inicio_medicamento = Column(Date, nullable=True)
+
+    telefone = Column(String, nullable=True)
+    telefone_comercial = Column(String, nullable=True)
+    telefone_celular = Column(String, nullable=True)
+
+    origem_arquivo = Column(String, nullable=True)
+    ativo = Column(Boolean, default=True, index=True)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow)
+
 class PacienteSimplificado(BaseConsultorio):
     __tablename__ = "pacientes_simplificados"
 
