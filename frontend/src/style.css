@@ -2407,3 +2407,21 @@ button {
 .alert-info .alert-content strong {
   color: #1d4ed8;
 }
+
+
+/* 15D.2B — Navegação desktop: manter novos módulos visíveis */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-header {
+  flex: 0 0 auto;
+}
+
+.sidebar-nav.grouped {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}

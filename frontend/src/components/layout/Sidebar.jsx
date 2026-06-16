@@ -11,7 +11,16 @@ function buildOpenSections(sections, pathname) {
   const initial = {};
 
   sections.forEach((section) => {
-    initial[section.key] = section.key === "inicio" || sectionHasActiveRoute(section, pathname);
+    /*
+      No desktop, manter as seções abertas evita que novos módulos
+      fiquem "ocultos" atrás de grupos recolhidos, especialmente durante
+      a homologação. O usuário ainda pode recolher manualmente qualquer seção.
+    */
+    initial[section.key] = true;
+
+    if (sectionHasActiveRoute(section, pathname)) {
+      initial[section.key] = true;
+    }
   });
 
   return initial;
