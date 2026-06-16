@@ -279,6 +279,176 @@ def _paciente_ceaf_resumo(paciente: PacienteCEAF) -> dict:
         "conversao_status": paciente.conversao_status,
     }
 
+
+def _inicio_fim_mes(ano: Optional[int] = None, mes: Optional[int] = None) -> tuple[date, date]:
+    hoje = date.today()
+    ano = int(ano or hoje.year)
+    mes = int(mes or hoje.month)
+    if mes < 1 or mes > 12:
+        raise HTTPException(status_code=400, detail="Mês inválido. Use valores entre 1 e 12.")
+    inicio = date(ano, mes, 1)
+    if mes == 12:
+        fim = date(ano + 1, 1, 1) - timedelta(days=1)
+    else:
+        fim = date(ano, mes + 1, 1) - timedelta(days=1)
+    return inicio, fim
+
+
+def _status_normalizado(valor: Optional[str]) -> str:
+    return (valor or "").strip().lower()
+
+
+def _situacao_lme_vigente(paciente: PacienteCEAF, data_referencia: date) -> bool:
+    situacao = (paciente.situacao_lme or "").strip().lower()
+    if any(term in situacao for term in ["indefer", "cancel", "encerr", "suspens", "bloque"]):
+        return False
+    if paciente.data_fim_vigencia and paciente.data_fim_vigencia < data_referencia:
+        return False
+    return True
+
+
+def _data_retirada_prevista_mes(inicio_mes: date, fim_mes: date, data_fim_vigencia: Optional[date]) -> Optional[date]:
+    hoje = date.today()
+    data_base = max(hoje, inicio_mes)
+    if data_base > fim_mes:
+        data_base = inicio_mes
+    if not data_tem_atendimento(data_base):
+        data_base = ajustar_para_proximo_dia_atendimento(data_base)
+    if data_base > fim_mes:
+        return None
+    if data_fim_vigencia and data_base > data_fim_vigencia:
+        return None
+    return data_base
+
+
+def _query_retiradas_ceaf_mes(db: Session, inicio_mes: date, fim_mes: date):
+    return db.query(AgendaIntegrada).filter(
+        AgendaIntegrada.servico_origem == "CEAF",
+        AgendaIntegrada.tipo_evento.in_(["RETIRADA_MEDICAMENTO", "RETIRADA", "RETIRADA_PREVISTA"]),
+        AgendaIntegrada.data_evento >= inicio_mes,
+        AgendaIntegrada.data_evento <= fim_mes,
+    )
+
+
+def _retirada_ceaf_existente_mes(db: Session, paciente: PacienteCEAF, inicio_mes: date, fim_mes: date) -> Optional[AgendaIntegrada]:
+    filtros_paciente = []
+    if paciente.id:
+        filtros_paciente.append(AgendaIntegrada.paciente_ceaf_id == paciente.id)
+    if paciente.paciente_clinico_id:
+        filtros_paciente.append(AgendaIntegrada.paciente_clinico_id == paciente.paciente_clinico_id)
+    if paciente.paciente_agenda_id:
+        filtros_paciente.append(AgendaIntegrada.paciente_id == paciente.paciente_agenda_id)
+    if not filtros_paciente:
+        return None
+    return _query_retiradas_ceaf_mes(db, inicio_mes, fim_mes).filter(
+        or_(*filtros_paciente),
+        AgendaIntegrada.status.in_([
+            "retirada_prevista", "agendado", "notificado", "reagendado",
+            "realizado", "concluido", "AGENDADO", "REALIZADO", "CONCLUIDO"
+        ])
+    ).first()
+
+
+def _pendencia_renovacao_ceaf_existente(db: Session, paciente: PacienteCEAF) -> Optional[AgendaIntegrada]:
+    return db.query(AgendaIntegrada).filter(
+        AgendaIntegrada.servico_origem == "CEAF",
+        AgendaIntegrada.paciente_ceaf_id == paciente.id,
+        AgendaIntegrada.tipo_evento.in_(["RENOVACAO_LME", "PENDENCIA_DOCUMENTAL"]),
+        AgendaIntegrada.status.in_(["agendado", "notificado", "reagendado", "retirada_prevista", "AGENDADO"]),
+    ).first()
+
+
+def _criar_pendencia_renovacao_ceaf(db: Session, paciente: PacienteCEAF, data_base: date, usuario: str) -> Optional[AgendaIntegrada]:
+    if _pendencia_renovacao_ceaf_existente(db, paciente):
+        return None
+    data_evento = data_base
+    if not data_tem_atendimento(data_evento):
+        data_evento = ajustar_para_proximo_dia_atendimento(data_evento)
+    agenda = AgendaIntegrada(
+        servico_origem="CEAF",
+        tipo_evento="RENOVACAO_LME",
+        prioridade="URGENTE",
+        status="agendado",
+        titulo="Pendência de renovação LME - CEAF",
+        paciente_id=paciente.paciente_agenda_id,
+        paciente_ceaf_id=paciente.id,
+        paciente_clinico_id=paciente.paciente_clinico_id,
+        paciente_nome=paciente.nome,
+        telefone=_telefone_ceaf(paciente),
+        medicamento=paciente.medicamento_prescrito,
+        situacao_laudo=paciente.situacao_lme,
+        data_evento=data_evento,
+        data_original=data_evento,
+        data_inicio_vigencia=paciente.data_inicio_medicamento,
+        data_fim_vigencia=paciente.data_fim_vigencia,
+        referencia_tipo="CEAF",
+        referencia_id=paciente.id,
+        origem_importacao="CONCILIACAO_CEAF",
+        observacoes="Pendência criada pela conciliação mensal: LME vencida ou sem vigência suficiente para retirada.",
+        notificar_whatsapp=True,
+    )
+    db.add(agenda)
+    db.flush()
+    db.add(AgendaHistorico(
+        agenda_id=agenda.id,
+        acao="CONCILIACAO_CEAF_PENDENCIA_RENOVACAO",
+        data_original=data_evento,
+        nova_data=data_evento,
+        status_original=None,
+        novo_status=agenda.status,
+        motivo="Bloqueio de retirada por LME vencida ou vigência insuficiente.",
+        tipo_motivo="sistema",
+        usuario=usuario,
+    ))
+    return agenda
+
+
+def _montar_resumo_conciliacao_ceaf(db: Session, inicio_mes: date, fim_mes: date) -> dict:
+    pacientes_ativos = db.query(PacienteCEAF).filter(or_(PacienteCEAF.ativo == True, PacienteCEAF.ativo.is_(None))).count()
+    retiradas_mes = _query_retiradas_ceaf_mes(db, inicio_mes, fim_mes).all()
+    status_counts = defaultdict(int)
+    for agenda in retiradas_mes:
+        status_counts[_status_normalizado(agenda.status)] += 1
+
+    hoje = date.today()
+    em_30_dias = hoje + timedelta(days=30)
+    lme_vencidas = db.query(PacienteCEAF).filter(
+        or_(PacienteCEAF.ativo == True, PacienteCEAF.ativo.is_(None)),
+        PacienteCEAF.data_fim_vigencia.isnot(None),
+        PacienteCEAF.data_fim_vigencia < hoje,
+    ).count()
+    lme_vencendo_30 = db.query(PacienteCEAF).filter(
+        or_(PacienteCEAF.ativo == True, PacienteCEAF.ativo.is_(None)),
+        PacienteCEAF.data_fim_vigencia.isnot(None),
+        PacienteCEAF.data_fim_vigencia >= hoje,
+        PacienteCEAF.data_fim_vigencia <= em_30_dias,
+    ).count()
+
+    pacientes = db.query(PacienteCEAF).filter(or_(PacienteCEAF.ativo == True, PacienteCEAF.ativo.is_(None))).all()
+    sem_retirada_prevista = 0
+    bloqueados_lme = 0
+    for paciente in pacientes:
+        data_prevista = _data_retirada_prevista_mes(inicio_mes, fim_mes, paciente.data_fim_vigencia)
+        if not _situacao_lme_vigente(paciente, data_prevista or max(date.today(), inicio_mes)):
+            bloqueados_lme += 1
+            continue
+        if not _retirada_ceaf_existente_mes(db, paciente, inicio_mes, fim_mes):
+            sem_retirada_prevista += 1
+
+    return {
+        "periodo": {"inicio": inicio_mes, "fim": fim_mes},
+        "pacientes_ceaf_ativos": pacientes_ativos,
+        "retiradas_previstas": status_counts.get("retirada_prevista", 0),
+        "retiradas_agendadas": status_counts.get("agendado", 0) + status_counts.get("notificado", 0) + status_counts.get("reagendado", 0),
+        "retiradas_realizadas": status_counts.get("realizado", 0) + status_counts.get("concluido", 0),
+        "retiradas_canceladas": status_counts.get("cancelado", 0),
+        "faltosos": status_counts.get("faltou", 0),
+        "sem_retirada_prevista": sem_retirada_prevista,
+        "bloqueados_por_lme": bloqueados_lme,
+        "lme_vencidas": lme_vencidas,
+        "lme_vencendo_30_dias": lme_vencendo_30,
+    }
+
 _garantir_colunas_agenda_ceaf()
 
 
@@ -1225,6 +1395,164 @@ def listar_historico_agendamento(
         raise HTTPException(status_code=404, detail="Agendamento não encontrado")
     historico = db.query(AgendaHistorico).filter(AgendaHistorico.agenda_id == agenda_id).order_by(AgendaHistorico.criado_em.desc()).all()
     return {"agenda_id": agenda_id, "total": len(historico), "historico": historico}
+
+
+
+@router.get("/agenda/conciliacao-ceaf/resumo")
+def resumo_conciliacao_ceaf(
+    ano: Optional[int] = None,
+    mes: Optional[int] = None,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    """Resumo operacional da conciliação mensal de retiradas CEAF.
+
+    Não altera dados. Serve para avaliar o mês antes de sincronizar a agenda.
+    """
+    inicio_mes, fim_mes = _inicio_fim_mes(ano, mes)
+    return _montar_resumo_conciliacao_ceaf(db, inicio_mes, fim_mes)
+
+
+@router.post("/agenda/conciliacao-ceaf/sincronizar")
+def sincronizar_retiradas_ceaf(
+    ano: Optional[int] = None,
+    mes: Optional[int] = None,
+    limite: int = 5000,
+    criar_pendencia_renovacao: bool = True,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    """Concilia retiradas mensais CEAF sem duplicar eventos já existentes.
+
+    Regras principais:
+    - paciente CEAF ativo + LME vigente + sem retirada no mês => cria retirada_prevista;
+    - LME vencida/insuficiente => não cria retirada e pode criar pendência de renovação;
+    - retirada já agendada/realizada/reagendada no mês => não duplica.
+    """
+    exigir_farmaceutico_ou_admin(current)
+
+    inicio_mes, fim_mes = _inicio_fim_mes(ano, mes)
+    usuario = _usuario_atual_identificacao(current)
+    hoje = date.today()
+
+    pacientes = db.query(PacienteCEAF).filter(
+        or_(PacienteCEAF.ativo == True, PacienteCEAF.ativo.is_(None))
+    ).order_by(PacienteCEAF.nome.asc()).limit(max(1, min(limite, 20000))).all()
+
+    criadas_previstas = 0
+    ja_existentes = 0
+    ja_realizadas = 0
+    bloqueadas_lme = 0
+    pendencias_criadas = 0
+    ignoradas_sem_dados = 0
+    exemplos_criados = []
+    exemplos_bloqueados = []
+
+    for paciente in pacientes:
+        if not paciente.nome:
+            ignoradas_sem_dados += 1
+            continue
+
+        data_prevista = _data_retirada_prevista_mes(inicio_mes, fim_mes, paciente.data_fim_vigencia)
+        referencia_vigencia = data_prevista or max(hoje, inicio_mes)
+
+        if not _situacao_lme_vigente(paciente, referencia_vigencia):
+            bloqueadas_lme += 1
+            if criar_pendencia_renovacao:
+                pendencia = _criar_pendencia_renovacao_ceaf(
+                    db=db,
+                    paciente=paciente,
+                    data_base=max(hoje, inicio_mes),
+                    usuario=usuario,
+                )
+                if pendencia is not None:
+                    pendencias_criadas += 1
+            if len(exemplos_bloqueados) < 8:
+                exemplos_bloqueados.append({
+                    "paciente": paciente.nome,
+                    "medicamento": paciente.medicamento_prescrito,
+                    "situacao_lme": paciente.situacao_lme,
+                    "data_fim_vigencia": paciente.data_fim_vigencia,
+                    "motivo": "LME vencida ou vigência insuficiente para retirada no mês",
+                })
+            continue
+
+        existente = _retirada_ceaf_existente_mes(db, paciente, inicio_mes, fim_mes)
+        if existente:
+            status_existente = _status_normalizado(existente.status)
+            if status_existente in ["realizado", "concluido"]:
+                ja_realizadas += 1
+            else:
+                ja_existentes += 1
+            continue
+
+        if not data_prevista:
+            bloqueadas_lme += 1
+            continue
+
+        agenda = AgendaIntegrada(
+            servico_origem="CEAF",
+            tipo_evento="RETIRADA_MEDICAMENTO",
+            prioridade="NORMAL",
+            status="retirada_prevista",
+            titulo="Retirada prevista de medicamento - CEAF",
+            paciente_id=paciente.paciente_agenda_id,
+            paciente_ceaf_id=paciente.id,
+            paciente_clinico_id=paciente.paciente_clinico_id,
+            paciente_nome=paciente.nome,
+            telefone=_telefone_ceaf(paciente),
+            medicamento=paciente.medicamento_prescrito,
+            situacao_laudo=paciente.situacao_lme,
+            data_evento=data_prevista,
+            data_original=data_prevista,
+            data_inicio_vigencia=paciente.data_inicio_medicamento,
+            data_fim_vigencia=paciente.data_fim_vigencia,
+            referencia_tipo="CEAF",
+            referencia_id=paciente.id,
+            origem_importacao="CONCILIACAO_CEAF",
+            observacoes="Retirada prevista criada pela conciliação mensal CEAF. Deve ser confirmada, reagendada, concluída ou cancelada pela equipe.",
+            notificar_whatsapp=True,
+        )
+        db.add(agenda)
+        db.flush()
+        db.add(AgendaHistorico(
+            agenda_id=agenda.id,
+            acao="CONCILIACAO_CEAF_RETIRADA_PREVISTA",
+            data_original=data_prevista,
+            nova_data=data_prevista,
+            status_original=None,
+            novo_status="retirada_prevista",
+            motivo="Retirada mensal prevista criada automaticamente pela conciliação CEAF.",
+            tipo_motivo="sistema",
+            usuario=usuario,
+        ))
+        criadas_previstas += 1
+        if len(exemplos_criados) < 8:
+            exemplos_criados.append({
+                "paciente": paciente.nome,
+                "data_evento": data_prevista,
+                "medicamento": paciente.medicamento_prescrito,
+                "vigencia": paciente.data_fim_vigencia,
+            })
+
+    db.commit()
+
+    resumo = _montar_resumo_conciliacao_ceaf(db, inicio_mes, fim_mes)
+    return {
+        "mensagem": "Conciliação mensal CEAF concluída.",
+        "periodo": {"inicio": inicio_mes, "fim": fim_mes},
+        "processados": len(pacientes),
+        "retiradas_previstas_criadas": criadas_previstas,
+        "retiradas_ja_existentes": ja_existentes,
+        "retiradas_ja_realizadas": ja_realizadas,
+        "bloqueadas_por_lme": bloqueadas_lme,
+        "pendencias_renovacao_criadas": pendencias_criadas,
+        "ignoradas_sem_dados": ignoradas_sem_dados,
+        "exemplos_criados": exemplos_criados,
+        "exemplos_bloqueados": exemplos_bloqueados,
+        "resumo_atualizado": resumo,
+    }
+
 
 @router.get("/agenda-retornos")
 def agenda_retornos(
