@@ -2408,20 +2408,71 @@ button {
   color: #1d4ed8;
 }
 
-
-/* 15D.2B — Navegação desktop: manter novos módulos visíveis */
+/* Passo 15D.2D — Ajuste de altura e rolagem da sidebar desktop */
 .sidebar {
+  height: 100vh;
+  max-height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  padding: 20px 16px;
 }
 
 .sidebar-header {
   flex: 0 0 auto;
+  margin-bottom: 18px;
 }
 
 .sidebar-nav.grouped {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding-right: 2px;
+  overflow-x: hidden;
+  padding-right: 4px;
+  padding-bottom: 32px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.36) transparent;
+}
+
+.sidebar-nav.grouped::-webkit-scrollbar {
+  width: 7px;
+}
+
+.sidebar-nav.grouped::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+}
+
+.sidebar-nav.grouped::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.nav-section-button {
+  min-height: 42px;
+  padding: 10px 12px;
+}
+
+.nav-section-items {
+  padding: 4px 7px 9px;
+}
+
+.nav-item.nested {
+  min-height: 40px;
+  padding: 9px 10px 9px 16px;
+  line-height: 1.2;
+}
+
+.nav-item.nested span {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    width: min(86vw, 280px);
+    padding: 20px 16px;
+  }
+
+  .sidebar-nav.grouped {
+    padding-bottom: 40px;
+  }
 }
