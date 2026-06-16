@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, BellRing, Pill, AlertTriangle, LayoutDashboard } from "lucide-react";
+import { CalendarDays, BellRing, Pill, AlertTriangle, LayoutDashboard, RefreshCw } from "lucide-react";
 import AgendaAlertas from "./AgendaAlertas.jsx";
 import AgendaIntegrada from "./AgendaIntegrada.jsx";
 import AgendaCatalogo from "./AgendaCatalogo.jsx";
+import ConciliacaoCeaf from "./ConciliacaoCeaf.jsx";
 import NotificacoesWhatsapp from "../notificacoes/NotificacoesWhatsapp.jsx";
 import "./AgendaWorkspace.css";
 
@@ -18,6 +19,12 @@ const TABS = [
     label: "Agenda",
     icon: CalendarDays,
     description: "Eventos, capacidade, reagendamentos e sugestões de datas.",
+  },
+  {
+    key: "conciliacao-ceaf",
+    label: "Conciliação CEAF",
+    icon: RefreshCw,
+    description: "Sincroniza retiradas mensais CEAF, bloqueios por LME vencida e pendências de renovação.",
   },
   {
     key: "notificacoes",
@@ -43,6 +50,8 @@ const LEGACY_TAB_BY_HASH = {
   "#visao-geral": "visao-geral",
   "#agenda": "agenda",
   "#eventos": "agenda",
+  "#conciliacao-ceaf": "conciliacao-ceaf",
+  "#conciliacao": "conciliacao-ceaf",
   "#notificacoes": "notificacoes",
   "#whatsapp": "whatsapp",
   "#catalogo": "catalogo",
@@ -70,6 +79,7 @@ export default function AgendaWorkspace({ setActivePage }) {
 
   function renderConteudo() {
     if (aba === "agenda") return <AgendaIntegrada setActivePage={setActivePage} />;
+    if (aba === "conciliacao-ceaf") return <ConciliacaoCeaf setActivePage={setActivePage} />;
     if (aba === "notificacoes") return <NotificacoesWhatsapp setActivePage={setActivePage} abaInicial="notificacoes" />;
     if (aba === "whatsapp") return <NotificacoesWhatsapp setActivePage={setActivePage} abaInicial="whatsapp" />;
     if (aba === "catalogo") return <AgendaCatalogo setActivePage={setActivePage} />;

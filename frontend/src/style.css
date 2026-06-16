@@ -2408,22 +2408,55 @@ button {
   color: #1d4ed8;
 }
 
-/* 15D.4 - Agenda CEAF integrada */
-.full-width-card {
-  grid-column: 1 / -1;
+/* 15D.5 - Conciliação Mensal CEAF */
+.conciliacao-ceaf-page .inline-checkbox {
+  align-self: end;
+  min-height: 42px;
 }
 
-.block {
-  display: block;
-  margin-top: 0.25rem;
+.conciliacao-resultado {
+  border-left: 4px solid #2563eb;
 }
 
-.agenda-table td .action-buttons {
-  gap: 0.35rem;
-  flex-wrap: wrap;
+.dashboard-grid.two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
 }
 
-.agenda-table td .secondary-button {
-  padding: 0.42rem 0.6rem;
-  font-size: 0.82rem;
+.compact-card {
+  margin: 0;
+  box-shadow: none;
+}
+
+.compact-list {
+  list-style: none;
+  display: grid;
+  gap: 0.65rem;
+  padding: 0;
+  margin: 0;
+}
+
+.compact-list li {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.85rem;
+  background: #f8fafc;
+}
+
+.compact-list li strong {
+  color: #0f172a;
+}
+
+.compact-list li span {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 900px) {
+  .dashboard-grid.two {
+    grid-template-columns: 1fr;
+  }
 }
