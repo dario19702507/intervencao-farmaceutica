@@ -465,6 +465,311 @@ def _montar_resumo_conciliacao_ceaf(db: Session, inicio_mes: date, fim_mes: date
         "lme_vencendo_30_dias": lme_vencendo_30,
     }
 
+
+PRIORIDADE_CEAF_PESO = {
+    "critico": 0,
+    "urgente": 1,
+    "atencao": 2,
+    "informativo": 3,
+}
+
+
+def _prioridade_ceaf_para_alerta(prioridade_ceaf: str) -> str:
+    """Mapeia a prioridade CEAF para a escala já usada na visão geral."""
+    prioridade = (prioridade_ceaf or "informativo").lower()
+    if prioridade in {"critico", "urgente"}:
+        return "alta"
+    if prioridade == "atencao":
+        return "moderada"
+    return "baixa"
+
+
+def _alerta_ceaf(
+    *,
+    tipo_alerta: str,
+    prioridade_ceaf: str,
+    mensagem: str,
+    paciente: Optional[PacienteCEAF] = None,
+    evento: Optional[AgendaIntegrada] = None,
+    data_referencia: Optional[date] = None,
+    acao_sugerida: Optional[str] = None,
+) -> dict:
+    paciente_nome = None
+    telefone = None
+    medicamento = None
+    paciente_ceaf_id = None
+    paciente_clinico_id = None
+    agenda_id = None
+    data_fim_vigencia = None
+
+    if paciente is not None:
+        paciente_nome = paciente.nome
+        telefone = _telefone_ceaf(paciente)
+        medicamento = paciente.medicamento_prescrito
+        paciente_ceaf_id = paciente.id
+        paciente_clinico_id = paciente.paciente_clinico_id
+        data_fim_vigencia = paciente.data_fim_vigencia
+
+    if evento is not None:
+        paciente_nome = paciente_nome or evento.paciente_nome
+        telefone = telefone or evento.telefone
+        medicamento = medicamento or evento.medicamento
+        paciente_ceaf_id = paciente_ceaf_id or evento.paciente_ceaf_id
+        paciente_clinico_id = paciente_clinico_id or evento.paciente_clinico_id
+        agenda_id = evento.id
+        data_fim_vigencia = data_fim_vigencia or evento.data_fim_vigencia
+
+    return {
+        "origem": "CEAF",
+        "tipo_alerta": tipo_alerta,
+        "prioridade": _prioridade_ceaf_para_alerta(prioridade_ceaf),
+        "prioridade_ceaf": prioridade_ceaf,
+        "mensagem": mensagem,
+        "paciente_ceaf_id": paciente_ceaf_id,
+        "paciente_clinico_id": paciente_clinico_id,
+        "paciente_id": paciente_clinico_id,
+        "paciente_nome": paciente_nome or "Não informado",
+        "telefone": telefone,
+        "medicamento": medicamento,
+        "agenda_id": agenda_id,
+        "data_referencia": data_referencia,
+        "data_fim_vigencia": data_fim_vigencia,
+        "acao_sugerida": acao_sugerida,
+    }
+
+
+def _ordenar_alertas_ceaf(alertas: list[dict]) -> list[dict]:
+    return sorted(
+        alertas,
+        key=lambda item: (
+            PRIORIDADE_CEAF_PESO.get(str(item.get("prioridade_ceaf", "informativo")).lower(), 9),
+            item.get("data_referencia") or date.max,
+            str(item.get("paciente_nome") or ""),
+        ),
+    )
+
+
+def _resumo_alertas_ceaf(alertas: list[dict]) -> dict:
+    resumo = {
+        "total": len(alertas),
+        "critico": 0,
+        "urgente": 0,
+        "atencao": 0,
+        "informativo": 0,
+        "por_tipo": defaultdict(int),
+    }
+    for alerta in alertas:
+        prioridade = str(alerta.get("prioridade_ceaf") or "informativo").lower()
+        if prioridade in resumo:
+            resumo[prioridade] += 1
+        resumo["por_tipo"][alerta.get("tipo_alerta") or "outro"] += 1
+    resumo["por_tipo"] = dict(resumo["por_tipo"])
+    return resumo
+
+
+def _coletar_alertas_ceaf(db: Session, limite: int = 300) -> list[dict]:
+    """Gera alertas CEAF sem criar registros.
+
+    A visão geral da agenda e a aba de notificações podem consumir esta mesma
+    lógica, evitando regras paralelas para LME, retiradas e risco assistencial.
+    """
+    hoje = date.today()
+    amanha = hoje + timedelta(days=1)
+    em_7_dias = hoje + timedelta(days=7)
+    em_15_dias = hoje + timedelta(days=15)
+    em_30_dias = hoje + timedelta(days=30)
+    inicio_mes, fim_mes = _inicio_fim_mes(hoje.year, hoje.month)
+    alertas: list[dict] = []
+
+    pacientes_query = db.query(PacienteCEAF).filter(
+        or_(PacienteCEAF.ativo == True, PacienteCEAF.ativo.is_(None))
+    )
+
+    pacientes = pacientes_query.order_by(PacienteCEAF.nome.asc()).limit(max(1, min(limite * 3, 2000))).all()
+
+    for paciente in pacientes:
+        if paciente.data_fim_vigencia:
+            dias_vigencia = (paciente.data_fim_vigencia - hoje).days
+            if dias_vigencia < 0:
+                alertas.append(_alerta_ceaf(
+                    tipo_alerta="ceaf_lme_vencida",
+                    prioridade_ceaf="critico",
+                    paciente=paciente,
+                    data_referencia=paciente.data_fim_vigencia,
+                    mensagem=(
+                        f"LME vencida em {paciente.data_fim_vigencia.strftime('%d/%m/%Y')}. "
+                        "Bloquear retirada e orientar renovação."
+                    ),
+                    acao_sugerida="Criar/confirmar pendência de renovação de LME.",
+                ))
+            elif paciente.data_fim_vigencia <= em_7_dias:
+                alertas.append(_alerta_ceaf(
+                    tipo_alerta="ceaf_lme_vence_7_dias",
+                    prioridade_ceaf="urgente",
+                    paciente=paciente,
+                    data_referencia=paciente.data_fim_vigencia,
+                    mensagem=f"LME vence em {dias_vigencia} dia(s). Priorizar contato para renovação.",
+                    acao_sugerida="Orientar renovação imediata.",
+                ))
+            elif paciente.data_fim_vigencia <= em_15_dias:
+                alertas.append(_alerta_ceaf(
+                    tipo_alerta="ceaf_lme_vence_15_dias",
+                    prioridade_ceaf="urgente",
+                    paciente=paciente,
+                    data_referencia=paciente.data_fim_vigencia,
+                    mensagem=f"LME vence em {dias_vigencia} dia(s). Programar renovação.",
+                    acao_sugerida="Agendar renovação de LME.",
+                ))
+            elif paciente.data_fim_vigencia <= em_30_dias:
+                alertas.append(_alerta_ceaf(
+                    tipo_alerta="ceaf_lme_vence_30_dias",
+                    prioridade_ceaf="atencao",
+                    paciente=paciente,
+                    data_referencia=paciente.data_fim_vigencia,
+                    mensagem=f"LME vence em {dias_vigencia} dia(s). Recomendar início da renovação.",
+                    acao_sugerida="Preparar documentação de renovação.",
+                ))
+
+        if _situacao_lme_vigente(paciente, hoje) and not _retirada_ceaf_existente_mes(db, paciente, inicio_mes, fim_mes):
+            alertas.append(_alerta_ceaf(
+                tipo_alerta="ceaf_sem_retirada_no_mes",
+                prioridade_ceaf="atencao",
+                paciente=paciente,
+                data_referencia=hoje,
+                mensagem="Paciente CEAF ativo sem retirada prevista, agendada ou realizada no mês corrente.",
+                acao_sugerida="Avaliar conciliação e agendamento de retirada.",
+            ))
+
+    retiradas_base = _query_retiradas_ceaf_mes(db, inicio_mes, fim_mes).filter(
+        func.lower(AgendaIntegrada.status).in_(STATUS_ATIVOS_AGENDA)
+    ).all()
+
+    for evento in retiradas_base:
+        status = _status_normalizado(evento.status)
+        data_evento = evento.data_evento
+        if not data_evento:
+            continue
+        if data_evento < hoje and status in {"agendado", "notificado", "retirada_prevista", "faltou"}:
+            alertas.append(_alerta_ceaf(
+                tipo_alerta="ceaf_retirada_atrasada",
+                prioridade_ceaf="urgente",
+                evento=evento,
+                data_referencia=data_evento,
+                mensagem=f"Retirada de medicamento atrasada desde {data_evento.strftime('%d/%m/%Y')}.",
+                acao_sugerida="Contatar paciente, reagendar ou registrar falta.",
+            ))
+        elif data_evento == hoje and status in {"agendado", "notificado", "retirada_prevista"}:
+            alertas.append(_alerta_ceaf(
+                tipo_alerta="ceaf_retirada_hoje",
+                prioridade_ceaf="informativo",
+                evento=evento,
+                data_referencia=data_evento,
+                mensagem="Retirada prevista para hoje.",
+                acao_sugerida="Confirmar comparecimento ou registrar retirada.",
+            ))
+        elif data_evento == amanha and status in {"agendado", "notificado", "retirada_prevista"}:
+            alertas.append(_alerta_ceaf(
+                tipo_alerta="ceaf_retirada_amanha",
+                prioridade_ceaf="informativo",
+                evento=evento,
+                data_referencia=data_evento,
+                mensagem="Retirada prevista para amanhã.",
+                acao_sugerida="Preparar notificação/lembrete.",
+            ))
+
+    return _ordenar_alertas_ceaf(alertas)[:max(1, limite)]
+
+
+def _alertas_ceaf_para_notificacoes(alertas: list[dict]) -> list[dict]:
+    notificacoes = []
+    for alerta in alertas:
+        telefone = alerta.get("telefone")
+        if not telefone:
+            continue
+        tipo = alerta.get("tipo_alerta")
+        paciente_nome = alerta.get("paciente_nome") or "Paciente"
+        medicamento = alerta.get("medicamento") or "medicamento"
+        data_ref = alerta.get("data_referencia") or alerta.get("data_fim_vigencia")
+        data_fmt = data_ref.strftime("%d/%m/%Y") if hasattr(data_ref, "strftime") else None
+
+        if tipo in {"ceaf_lme_vencida", "ceaf_lme_vence_7_dias", "ceaf_lme_vence_15_dias", "ceaf_lme_vence_30_dias"}:
+            mensagem = (
+                f"Olá, {paciente_nome}. A Farmácia Escola informa que a vigência da sua LME "
+                f"{('vence em ' + data_fmt) if data_fmt else 'precisa ser conferida'}. "
+                "Procure a equipe para orientação sobre renovação e continuidade do tratamento."
+            )
+            tipo_notificacao = "ceaf_renovacao_lme"
+        elif tipo in {"ceaf_retirada_amanha", "ceaf_retirada_hoje", "ceaf_retirada_atrasada", "ceaf_sem_retirada_no_mes"}:
+            mensagem = (
+                f"Olá, {paciente_nome}. A Farmácia Escola identificou pendência relacionada à retirada de "
+                f"{medicamento}. Procure a equipe para confirmação, reagendamento ou orientação."
+            )
+            tipo_notificacao = "ceaf_retirada"
+        else:
+            mensagem = f"Olá, {paciente_nome}. A Farmácia Escola possui uma orientação pendente para você."
+            tipo_notificacao = "ceaf_alerta"
+
+        notificacoes.append({
+            "agenda_id": alerta.get("agenda_id"),
+            "paciente_ceaf_id": alerta.get("paciente_ceaf_id"),
+            "paciente_clinico_id": alerta.get("paciente_clinico_id"),
+            "paciente_nome": paciente_nome,
+            "telefone": telefone,
+            "medicamento": medicamento,
+            "prioridade": alerta.get("prioridade_ceaf"),
+            "tipo_alerta": tipo,
+            "tipo_notificacao": tipo_notificacao,
+            "mensagem": mensagem,
+            "data_programada": date.today(),
+        })
+    return notificacoes
+
+
+def _gerar_notificacoes_ceaf_agenda(db: Session, limite: int = 300) -> dict:
+    """Materializa alertas CEAF na tabela de notificações da agenda.
+
+    Usado pela aba Notificações para preparar mensagens, sem disparo automático
+    de WhatsApp durante a homologação.
+    """
+    notificacoes = _alertas_ceaf_para_notificacoes(_coletar_alertas_ceaf(db, limite=limite))
+    criadas = 0
+    ignoradas = 0
+
+    for item in notificacoes:
+        query = db.query(NotificacaoAgenda).filter(
+            NotificacaoAgenda.tipo_notificacao == item["tipo_notificacao"],
+            NotificacaoAgenda.status.in_(["pendente", "enviada"]),
+        )
+        if item.get("agenda_id"):
+            query = query.filter(NotificacaoAgenda.agenda_id == item.get("agenda_id"))
+        else:
+            query = query.filter(
+                NotificacaoAgenda.paciente_nome == item.get("paciente_nome"),
+                NotificacaoAgenda.telefone == item.get("telefone"),
+            )
+
+        if query.first():
+            ignoradas += 1
+            continue
+
+        db.add(NotificacaoAgenda(
+            agenda_id=item.get("agenda_id"),
+            paciente_nome=item.get("paciente_nome"),
+            telefone=item.get("telefone"),
+            tipo_notificacao=item.get("tipo_notificacao"),
+            mensagem=item.get("mensagem"),
+            data_programada=item.get("data_programada") or date.today(),
+            status="pendente",
+            canal="whatsapp_preparacao",
+        ))
+        criadas += 1
+
+    db.commit()
+    return {
+        "notificacoes_ceaf_criadas": criadas,
+        "notificacoes_ceaf_ignoradas": ignoradas,
+    }
+
 _garantir_colunas_agenda_ceaf()
 
 
@@ -1049,9 +1354,13 @@ def notificacoes_pendentes_agenda(
                     )
                 })
 
+    notificacoes_ceaf = _alertas_ceaf_para_notificacoes(_coletar_alertas_ceaf(db, limite=300))
+    notificacoes.extend(notificacoes_ceaf)
+
     return {
         "total": len(notificacoes),
-        "notificacoes": notificacoes
+        "notificacoes": notificacoes,
+        "ceaf_total": len(notificacoes_ceaf),
     }
 
 @router.put("/agenda/{agenda_id}")
@@ -1653,7 +1962,69 @@ def executar_alertas_risco_interrupcao(
 def alertas_pendentes(
     db: Session = Depends(get_db_consultorio)
 ):
-    return svc_alertas_pendentes(db=db)
+    base = svc_alertas_pendentes(db=db)
+    alertas_base = base.get("alertas", [])
+    alertas_ceaf = _coletar_alertas_ceaf(db, limite=200)
+    alertas = alertas_base + alertas_ceaf
+
+    def peso(item):
+        prioridade_ceaf = str(item.get("prioridade_ceaf") or "").lower()
+        if prioridade_ceaf:
+            return PRIORIDADE_CEAF_PESO.get(prioridade_ceaf, 9)
+        prioridade = str(item.get("prioridade") or "baixa").lower()
+        return {"alta": 1, "moderada": 2, "baixa": 3}.get(prioridade, 9)
+
+    alertas = sorted(alertas, key=lambda a: (peso(a), str(a.get("paciente_nome") or "")))
+    resumo = {
+        "total_alertas": len(alertas),
+        "alta": sum(1 for a in alertas if a.get("prioridade") == "alta"),
+        "moderada": sum(1 for a in alertas if a.get("prioridade") == "moderada"),
+        "baixa": sum(1 for a in alertas if a.get("prioridade") == "baixa"),
+        "ceaf_total": len(alertas_ceaf),
+        "ceaf_critico": sum(1 for a in alertas_ceaf if a.get("prioridade_ceaf") == "critico"),
+        "ceaf_urgente": sum(1 for a in alertas_ceaf if a.get("prioridade_ceaf") == "urgente"),
+        "ceaf_atencao": sum(1 for a in alertas_ceaf if a.get("prioridade_ceaf") == "atencao"),
+        "ceaf_informativo": sum(1 for a in alertas_ceaf if a.get("prioridade_ceaf") == "informativo"),
+    }
+    return {"resumo": resumo, "alertas": alertas}
+
+@router.get("/agenda/alertas-ceaf")
+def listar_alertas_ceaf_agenda(
+    limite: int = 300,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    alertas = _coletar_alertas_ceaf(db, limite=limite)
+    return {
+        "resumo": _resumo_alertas_ceaf(alertas),
+        "total": len(alertas),
+        "alertas": alertas,
+    }
+
+
+@router.get("/agenda/alertas-ceaf/resumo")
+def resumo_alertas_ceaf_agenda(
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    alertas = _coletar_alertas_ceaf(db, limite=1000)
+    return _resumo_alertas_ceaf(alertas)
+
+
+@router.get("/agenda/notificacoes-pendentes-ceaf")
+def notificacoes_pendentes_ceaf_agenda(
+    limite: int = 300,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    alertas = _coletar_alertas_ceaf(db, limite=limite)
+    notificacoes = _alertas_ceaf_para_notificacoes(alertas)
+    return {
+        "total": len(notificacoes),
+        "notificacoes": notificacoes,
+        "resumo_alertas": _resumo_alertas_ceaf(alertas),
+    }
+
 
 @router.get("/agenda/notificacoes")
 def buscar_notificacoes_agenda(
@@ -1743,7 +2114,14 @@ def executar_geracao_notificacoes_agenda(
     db: Session = Depends(get_db_consultorio),
     current=Depends(get_current_user_consultorio)
 ):
-    return gerar_notificacoes_agenda(db)
+    resultado_base = gerar_notificacoes_agenda(db)
+    resultado_ceaf = _gerar_notificacoes_ceaf_agenda(db)
+    return {
+        **resultado_base,
+        **resultado_ceaf,
+        "notificacoes_criadas_total": (resultado_base.get("notificacoes_criadas") or 0) + resultado_ceaf.get("notificacoes_ceaf_criadas", 0),
+        "notificacoes_ignoradas_total": (resultado_base.get("notificacoes_ignoradas") or 0) + resultado_ceaf.get("notificacoes_ceaf_ignoradas", 0),
+    }
 
 @router.get("/agenda/notificacoes/listar")
 def listar_notificacoes_agenda(
