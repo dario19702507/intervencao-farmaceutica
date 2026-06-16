@@ -87,6 +87,60 @@ export default function AgendaIntegrada() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [periodoAgenda]);
 
+  const hoje = new Date().toISOString().slice(0, 10);
+
+  const statusEncerradosAgenda = ["cancelado", "reagendado", "realizado", "concluido"];
+  const statusOperacionaisAgenda = [
+    "agendado",
+    "notificado",
+    "retirada_prevista",
+    "renovacao_recomendada",
+    "renovacao_urgente",
+    "risco_interrupcao_tratamento",
+    "faltou",
+  ];
+  const tiposRetiradaAgenda = ["retirada_medicamento", "retirada", "retirada_prevista", "dispensacao"];
+  const tiposRenovacaoAgenda = ["renovacao_lme", "renovacao_laudo", "pendencia_documental", "renovacao_lme_ceaf"];
+
+  function normalizarTexto(valor) {
+    return String(valor || "").trim().toLowerCase();
+  }
+
+  function ehRetirada(evento) {
+    return tiposRetiradaAgenda.includes(normalizarTexto(evento.tipo_evento));
+  }
+
+  function ehRenovacao(evento) {
+    return tiposRenovacaoAgenda.includes(normalizarTexto(evento.tipo_evento));
+  }
+
+  function ehAtivoOperacional(evento) {
+    const status = normalizarTexto(evento.status);
+    return !statusEncerradosAgenda.includes(status);
+  }
+
+  function categoriaOk(evento, filtro) {
+    const origem = normalizarTexto(evento.servico_origem);
+    if (filtro === "todos") return true;
+    if (filtro === "consultorio") return origem === "consultorio";
+    if (filtro === "intervencao") return origem === "intervencao";
+    if (filtro === "dispensacao") return ehRetirada(evento);
+    if (filtro === "renovacao_laudo") return ehRenovacao(evento);
+    return true;
+  }
+
+  function laudoVencido(dataFimVigencia) {
+    if (!dataFimVigencia) return false;
+    const dataFim = new Date(`${dataFimVigencia}T00:00:00`);
+    const hojeLocal = new Date();
+    hojeLocal.setHours(0, 0, 0, 0);
+    return dataFim < hojeLocal;
+  }
+
+  const retiradaComLaudoVencido =
+    novoEvento.tipo_evento === "retirada_medicamento" &&
+    laudoVencido(novoEvento.data_fim_vigencia);
+
   const eventosFiltrados = useMemo(() => {
     return eventos.filter((evento) => {
       const status = normalizarTexto(evento.status);
@@ -143,60 +197,6 @@ export default function AgendaIntegrada() {
       return true;
     });
   }, [eventos, filtroServico, filtroStatus, filtroAlerta]);
-
-  const hoje = new Date().toISOString().slice(0, 10);
-
-  const statusEncerradosAgenda = ["cancelado", "reagendado", "realizado", "concluido"];
-  const statusOperacionaisAgenda = [
-    "agendado",
-    "notificado",
-    "retirada_prevista",
-    "renovacao_recomendada",
-    "renovacao_urgente",
-    "risco_interrupcao_tratamento",
-    "faltou",
-  ];
-  const tiposRetiradaAgenda = ["retirada_medicamento", "retirada", "retirada_prevista", "dispensacao"];
-  const tiposRenovacaoAgenda = ["renovacao_lme", "renovacao_laudo", "pendencia_documental", "renovacao_lme_ceaf"];
-
-  function normalizarTexto(valor) {
-    return String(valor || "").trim().toLowerCase();
-  }
-
-  function ehRetirada(evento) {
-    return tiposRetiradaAgenda.includes(normalizarTexto(evento.tipo_evento));
-  }
-
-  function ehRenovacao(evento) {
-    return tiposRenovacaoAgenda.includes(normalizarTexto(evento.tipo_evento));
-  }
-
-  function ehAtivoOperacional(evento) {
-    const status = normalizarTexto(evento.status);
-    return !statusEncerradosAgenda.includes(status);
-  }
-
-  function categoriaOk(evento, filtro) {
-    const origem = normalizarTexto(evento.servico_origem);
-    if (filtro === "todos") return true;
-    if (filtro === "consultorio") return origem === "consultorio";
-    if (filtro === "intervencao") return origem === "intervencao";
-    if (filtro === "dispensacao") return ehRetirada(evento);
-    if (filtro === "renovacao_laudo") return ehRenovacao(evento);
-    return true;
-  }
-
-  function laudoVencido(dataFimVigencia) {
-    if (!dataFimVigencia) return false;
-    const dataFim = new Date(`${dataFimVigencia}T00:00:00`);
-    const hojeLocal = new Date();
-    hojeLocal.setHours(0, 0, 0, 0);
-    return dataFim < hojeLocal;
-  }
-
-  const retiradaComLaudoVencido =
-    novoEvento.tipo_evento === "retirada_medicamento" &&
-    laudoVencido(novoEvento.data_fim_vigencia);
 
   const resumoOperacional = useMemo(() => {
     const eventosAtivos = eventos.filter(ehAtivoOperacional);
