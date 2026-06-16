@@ -9,18 +9,10 @@ function sectionHasActiveRoute(section, pathname) {
 
 function buildOpenSections(sections, pathname) {
   const initial = {};
+  const shouldOpenActiveSection = pathname !== "/";
 
   sections.forEach((section) => {
-    /*
-      No desktop, manter as seções abertas evita que novos módulos
-      fiquem "ocultos" atrás de grupos recolhidos, especialmente durante
-      a homologação. O usuário ainda pode recolher manualmente qualquer seção.
-    */
-    initial[section.key] = true;
-
-    if (sectionHasActiveRoute(section, pathname)) {
-      initial[section.key] = true;
-    }
+    initial[section.key] = shouldOpenActiveSection && sectionHasActiveRoute(section, pathname);
   });
 
   return initial;
@@ -39,6 +31,17 @@ export default function Sidebar({ usuario, open, setOpen }) {
   const [openSections, setOpenSections] = useState(() => buildOpenSections(visibleSections, location.pathname));
 
   useEffect(() => {
+    if (location.pathname === "/") {
+      setOpenSections((current) => {
+        const next = { ...current };
+        visibleSections.forEach((section) => {
+          next[section.key] = false;
+        });
+        return next;
+      });
+      return;
+    }
+
     setOpenSections((current) => {
       const next = { ...current };
       visibleSections.forEach((section) => {
