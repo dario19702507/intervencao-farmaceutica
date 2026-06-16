@@ -18,14 +18,23 @@ export default function AgendaIntegrada() {
   const [buscaPaciente, setBuscaPaciente] = useState("");
   const [pacientesEncontrados, setPacientesEncontrados] = useState([]);
   const [buscandoPaciente, setBuscandoPaciente] = useState(false);
+  const [buscaCeaf, setBuscaCeaf] = useState("");
+  const [pacientesCeafEncontrados, setPacientesCeafEncontrados] = useState([]);
+  const [buscandoCeaf, setBuscandoCeaf] = useState(false);
+  const [contextoCeaf, setContextoCeaf] = useState(null);
+  const [reagendamento, setReagendamento] = useState(null);
+  const [historicoAgenda, setHistoricoAgenda] = useState(null);
 
   const [novoEvento, setNovoEvento] = useState({
     paciente_id: null,
+    paciente_ceaf_id: null,
+    paciente_clinico_id: null,
     paciente_nome: "",
     telefone: "",
     servico_origem: "dispensacao",
     tipo_evento: "retirada_medicamento",
     medicamento: "",
+    situacao_laudo: "",
     data_evento: "",
     data_inicio_vigencia: "",
     data_fim_vigencia: "",
@@ -187,6 +196,122 @@ export default function AgendaIntegrada() {
     setPacientesEncontrados([]);
   }
 
+
+  async function buscarPacientesCeafAgenda(termo) {
+    setBuscaCeaf(termo);
+
+    if (!termo || termo.trim().length < 3) {
+      setPacientesCeafEncontrados([]);
+      return;
+    }
+
+    try {
+      setBuscandoCeaf(true);
+      const response = await api.get("/consultorio/agenda/pacientes-ceaf/buscar", {
+        params: { termo: termo.trim() },
+      });
+      setPacientesCeafEncontrados(response.data.pacientes || []);
+    } catch (error) {
+      console.error("Erro ao buscar pacientes CEAF:", error);
+      setPacientesCeafEncontrados([]);
+    } finally {
+      setBuscandoCeaf(false);
+    }
+  }
+
+  async function selecionarPacienteCeafAgenda(paciente) {
+    try {
+      const response = await api.get(`/consultorio/agenda/pacientes-ceaf/${paciente.id}/contexto`);
+      const contexto = response.data;
+      const dadosPaciente = contexto.paciente || paciente;
+      const sugestao = contexto.sugestao || {};
+
+      setContextoCeaf(contexto);
+      setNovoEvento({
+        ...novoEvento,
+        paciente_ceaf_id: dadosPaciente.id,
+        paciente_clinico_id: dadosPaciente.paciente_clinico_id || null,
+        paciente_id: dadosPaciente.paciente_agenda_id || null,
+        paciente_nome: dadosPaciente.nome || "",
+        telefone: dadosPaciente.telefone || dadosPaciente.telefone_celular || "",
+        servico_origem: sugestao.servico_origem || "CEAF",
+        tipo_evento: sugestao.tipo_evento || "RENOVACAO_LME",
+        prioridade: sugestao.prioridade || "NORMAL",
+        medicamento: dadosPaciente.medicamento_prescrito || "",
+        situacao_laudo: dadosPaciente.situacao_lme || "",
+        data_evento: sugestao.data_evento || "",
+        data_inicio_vigencia: dadosPaciente.data_inicio_medicamento || "",
+        data_fim_vigencia: dadosPaciente.data_fim_vigencia || "",
+        observacoes: `Agendamento CEAF. Município: ${dadosPaciente.municipio || "não informado"}.`,
+        notificar_whatsapp: true,
+      });
+
+      setBuscaCeaf(dadosPaciente.nome || "");
+      setPacientesCeafEncontrados([]);
+    } catch (error) {
+      console.error("Erro ao carregar contexto CEAF:", error);
+      alert("Erro ao carregar dados do paciente CEAF.");
+    }
+  }
+
+  async function gerarAgendaCeafAutomatica() {
+    if (!confirm("Gerar agenda CEAF automaticamente para pacientes com vigência registrada?")) {
+      return;
+    }
+    try {
+      const response = await api.post("/consultorio/agenda/gerar-ceaf", null, {
+        params: { dias_antes_vigencia: 30 },
+      });
+      alert(
+        `Agenda CEAF processada. Criados: ${response.data.criados || 0}. Existentes: ${response.data.existentes || 0}. Ignorados: ${response.data.ignorados || 0}.`
+      );
+      await carregarAgenda();
+    } catch (error) {
+      console.error("Erro ao gerar agenda CEAF:", error);
+      alert("Erro ao gerar agenda CEAF automática.");
+    }
+  }
+
+  function abrirReagendamento(evento) {
+    setReagendamento({
+      evento,
+      nova_data: evento.data_evento || "",
+      motivo: "",
+      tipo_motivo: "equipe",
+      observacoes: "",
+    });
+  }
+
+  async function salvarReagendamento() {
+    if (!reagendamento?.nova_data || !reagendamento?.motivo?.trim()) {
+      alert("Informe a nova data e o motivo do reagendamento.");
+      return;
+    }
+    try {
+      await api.post(`/consultorio/agenda/${reagendamento.evento.id}/reagendar`, {
+        nova_data: reagendamento.nova_data,
+        motivo: reagendamento.motivo,
+        tipo_motivo: reagendamento.tipo_motivo,
+        observacoes: reagendamento.observacoes,
+      });
+      setReagendamento(null);
+      await carregarAgenda();
+    } catch (error) {
+      console.error("Erro ao reagendar:", error);
+      alert("Erro ao reagendar compromisso.");
+    }
+  }
+
+  async function carregarHistoricoAgenda(evento) {
+    try {
+      const response = await api.get(`/consultorio/agenda/${evento.id}/historico`);
+      setHistoricoAgenda({ evento, historico: response.data.historico || [] });
+    } catch (error) {
+      console.error("Erro ao carregar histórico:", error);
+      alert("Erro ao carregar histórico do agendamento.");
+    }
+  }
+
   async function atualizarStatus(evento, status) {
     try {
       const response = await api.post(`/consultorio/agenda/${evento.id}/status`, {
@@ -217,11 +342,14 @@ export default function AgendaIntegrada() {
   function limparFormularioEvento() {
     setNovoEvento({
       paciente_id: null,
+      paciente_ceaf_id: null,
+      paciente_clinico_id: null,
       paciente_nome: "",
       telefone: "",
       servico_origem: "dispensacao",
       tipo_evento: "retirada_medicamento",
       medicamento: "",
+      situacao_laudo: "",
       data_evento: "",
       data_inicio_vigencia: "",
       data_fim_vigencia: "",
@@ -231,6 +359,9 @@ export default function AgendaIntegrada() {
 
     setBuscaPaciente("");
     setPacientesEncontrados([]);
+    setBuscaCeaf("");
+    setPacientesCeafEncontrados([]);
+    setContextoCeaf(null);
     setCapacidadeDia(null);
     setSugestoesDatas([]);
     setMostrarFormulario(false);
@@ -346,6 +477,10 @@ export default function AgendaIntegrada() {
             Atualizar
           </button>
 
+          <button className="secondary-button" onClick={gerarAgendaCeafAutomatica}>
+            Gerar agenda CEAF
+          </button>
+
           <button
             className="secondary-button"
             onClick={() => setMostrarNotificacoes(!mostrarNotificacoes)}
@@ -434,6 +569,44 @@ export default function AgendaIntegrada() {
 
           <div className="filters-row">
             <label>
+              Buscar paciente CEAF
+              <input
+                value={buscaCeaf}
+                onChange={(e) => buscarPacientesCeafAgenda(e.target.value)}
+                placeholder="Nome, CPF, CNS ou medicamento"
+              />
+            </label>
+
+            {buscandoCeaf && <div className="clinical-summary">Buscando paciente CEAF...</div>}
+
+            {pacientesCeafEncontrados.length > 0 && (
+              <div className="form-card full-width-card">
+                <h4>Pacientes CEAF encontrados</h4>
+                <div className="action-buttons">
+                  {pacientesCeafEncontrados.map((paciente) => (
+                    <button
+                      key={paciente.id}
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => selecionarPacienteCeafAgenda(paciente)}
+                    >
+                      {paciente.nome} — {paciente.medicamento_prescrito || "sem medicamento"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {contextoCeaf?.paciente && (
+              <div className="clinical-summary full-width-card success">
+                <strong>Resumo CEAF do paciente selecionado</strong>
+                <p><b>Medicamento:</b> {contextoCeaf.paciente.medicamento_prescrito || "não informado"}</p>
+                <p><b>Vigência:</b> {contextoCeaf.paciente.data_fim_vigencia || "não informada"} · <b>Situação LME:</b> {contextoCeaf.paciente.situacao_lme || "não informada"}</p>
+                <p><b>Contato:</b> {contextoCeaf.paciente.telefone || "sem telefone"} · <b>Município:</b> {contextoCeaf.paciente.municipio || "não informado"}</p>
+              </div>
+            )}
+
+            <label>
               Buscar paciente cadastrado
               <input
                 value={buscaPaciente}
@@ -508,6 +681,7 @@ export default function AgendaIntegrada() {
                 <option value="intervencao">Intervenção</option>
                 <option value="dispensacao">Dispensação</option>
                 <option value="renovacao_laudo">Renovação de laudo</option>
+                <option value="CEAF">CEAF</option>
               </select>
             </label>
 
@@ -522,6 +696,7 @@ export default function AgendaIntegrada() {
                 <option value="retorno_plano_cuidado">Retorno plano de cuidado</option>
                 <option value="retorno_intervencao">Retorno intervenção</option>
                 <option value="retirada_medicamento">Retirada de medicamento</option>
+                <option value="RENOVACAO_LME">Renovação de LME CEAF</option>
                 <option value="renovacao_laudo">Renovação de laudo</option>
                 <option value="risco_perda_medicacao">Risco de perda da medicação</option>
                 <option value="risco_encerramento_processo">Risco de encerramento do processo</option>
@@ -536,6 +711,15 @@ export default function AgendaIntegrada() {
                   setNovoEvento({ ...novoEvento, medicamento: e.target.value })
                 }
                 placeholder="Medicamento"
+              />
+            </label>
+
+            <label>
+              Situação LME
+              <input
+                value={novoEvento.situacao_laudo}
+                onChange={(e) => setNovoEvento({ ...novoEvento, situacao_laudo: e.target.value })}
+                placeholder="Situação LME"
               />
             </label>
 
@@ -691,6 +875,7 @@ export default function AgendaIntegrada() {
               <option value="intervencao">Intervenções</option>
               <option value="dispensacao">Dispensação</option>
               <option value="renovacao_laudo">Renovação de laudo</option>
+              <option value="CEAF">CEAF</option>
             </select>
           </label>
 
@@ -754,6 +939,95 @@ export default function AgendaIntegrada() {
         </div>
       </div>
 
+      {reagendamento && (
+        <div className="form-card">
+          <div className="section-header">
+            <div>
+              <h3>Reagendar compromisso</h3>
+              <p className="muted">Paciente: {reagendamento.evento.paciente_nome}</p>
+            </div>
+          </div>
+          <div className="filters-row">
+            <label>
+              Nova data
+              <input
+                type="date"
+                value={reagendamento.nova_data}
+                onChange={(e) => setReagendamento({ ...reagendamento, nova_data: e.target.value })}
+              />
+            </label>
+            <label>
+              Tipo de motivo
+              <select
+                value={reagendamento.tipo_motivo}
+                onChange={(e) => setReagendamento({ ...reagendamento, tipo_motivo: e.target.value })}
+              >
+                <option value="paciente">Paciente</option>
+                <option value="equipe">Equipe</option>
+                <option value="estoque">Estoque</option>
+                <option value="sistema">Sistema</option>
+                <option value="outro">Outro</option>
+              </select>
+            </label>
+            <label>
+              Motivo
+              <input
+                value={reagendamento.motivo}
+                onChange={(e) => setReagendamento({ ...reagendamento, motivo: e.target.value })}
+                placeholder="Motivo do reagendamento"
+              />
+            </label>
+          </div>
+          <label className="full-width-label">
+            Observações
+            <textarea
+              value={reagendamento.observacoes}
+              onChange={(e) => setReagendamento({ ...reagendamento, observacoes: e.target.value })}
+              placeholder="Observações complementares"
+            />
+          </label>
+          <div className="action-buttons">
+            <button className="primary-button" onClick={salvarReagendamento}>Salvar reagendamento</button>
+            <button className="secondary-button" onClick={() => setReagendamento(null)}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      {historicoAgenda && (
+        <div className="form-card">
+          <div className="section-header">
+            <div>
+              <h3>Histórico do agendamento</h3>
+              <p className="muted">Paciente: {historicoAgenda.evento.paciente_nome}</p>
+            </div>
+            <button className="secondary-button" onClick={() => setHistoricoAgenda(null)}>Fechar</button>
+          </div>
+          {historicoAgenda.historico.length === 0 ? (
+            <p className="muted">Nenhuma alteração registrada.</p>
+          ) : (
+            <div className="table-wrapper">
+              <table className="agenda-table">
+                <thead>
+                  <tr><th>Data</th><th>Ação</th><th>Original</th><th>Nova</th><th>Motivo</th><th>Usuário</th></tr>
+                </thead>
+                <tbody>
+                  {historicoAgenda.historico.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.criado_em ? new Date(item.criado_em).toLocaleString("pt-BR") : "-"}</td>
+                      <td>{item.acao}</td>
+                      <td>{item.data_original || "-"}</td>
+                      <td>{item.nova_data || "-"}</td>
+                      <td>{item.motivo || "-"}</td>
+                      <td>{item.usuario || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="form-card">
         <h3>Compromissos</h3>
 
@@ -771,6 +1045,7 @@ export default function AgendaIntegrada() {
                   <th>Serviço</th>
                   <th>Evento</th>
                   <th>Medicamento</th>
+                  <th>Vigência / LME</th>
                   <th>Status</th>
                   <th>Telefone</th>
                   <th>Ações</th>
@@ -790,6 +1065,10 @@ export default function AgendaIntegrada() {
                     <td>{evento.servico_origem}</td>
                     <td>{evento.tipo_evento}</td>
                     <td>{evento.medicamento || "-"}</td>
+                    <td>
+                      {evento.data_fim_vigencia || "-"}
+                      {evento.situacao_laudo ? <small className="muted block">{evento.situacao_laudo}</small> : null}
+                    </td>
 
                     <td>
                       <span className={`timeline-tag ${evento.status}`}>
@@ -810,6 +1089,13 @@ export default function AgendaIntegrada() {
 
                         <button
                           className="secondary-button"
+                          onClick={() => abrirReagendamento(evento)}
+                        >
+                          Reagendar
+                        </button>
+
+                        <button
+                          className="secondary-button"
                           onClick={() => atualizarStatus(evento, "faltou")}
                         >
                           Faltou
@@ -820,6 +1106,13 @@ export default function AgendaIntegrada() {
                           onClick={() => atualizarStatus(evento, "cancelado")}
                         >
                           Cancelar
+                        </button>
+
+                        <button
+                          className="secondary-button"
+                          onClick={() => carregarHistoricoAgenda(evento)}
+                        >
+                          Histórico
                         </button>
                       </div>
                     </td>

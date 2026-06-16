@@ -259,6 +259,8 @@ class AgendaIntegradaCreate(BaseModel):
     titulo: Optional[str] = None
 
     paciente_id: Optional[int] = None
+    paciente_ceaf_id: Optional[int] = None
+    paciente_clinico_id: Optional[int] = None
     paciente_nome: str
     telefone: Optional[str] = None
 
@@ -289,6 +291,8 @@ class AgendaIntegradaUpdate(BaseModel):
     prioridade: Optional[str] = None
     titulo: Optional[str] = None
 
+    paciente_ceaf_id: Optional[int] = None
+    paciente_clinico_id: Optional[int] = None
     paciente_nome: Optional[str] = None
     telefone: Optional[str] = None
 
@@ -312,6 +316,14 @@ class AgendaIntegradaUpdate(BaseModel):
 
 class AgendaStatusUpdate(BaseModel):
     status: str
+    observacoes: Optional[str] = None
+
+
+
+class AgendaReagendarCreate(BaseModel):
+    nova_data: date
+    motivo: str
+    tipo_motivo: Optional[str] = "equipe"
     observacoes: Optional[str] = None
 
 

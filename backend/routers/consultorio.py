@@ -45,7 +45,9 @@ from models.consultorio_models import (
     NotificacaoAgenda,
     PacienteAgenda,
     AgendaIntegrada,
+    AgendaHistorico,
     CatalogoMedicamento,
+    PacienteCEAF,
 )
 from schemas.consultorio_schemas import (
     PacienteSimplificadoCreate,
@@ -70,6 +72,7 @@ from schemas.consultorio_schemas import (
     AgendaIntegradaCreate,
     AgendaIntegradaUpdate,
     AgendaStatusUpdate,
+    AgendaReagendarCreate,
     CapacidadeAgendaCreate,
     CapacidadeAgendaUpdate,
     NotificacaoAgendaUpdate,
@@ -212,6 +215,71 @@ def get_db_consultorio():
 
 
 BaseConsultorio.metadata.create_all(bind=engine)
+
+
+def _adicionar_coluna_se_nao_existir(tabela: str, coluna: str, tipo: str) -> None:
+    try:
+        with engine.begin() as conn:
+            dialecto = engine.dialect.name
+            if dialecto == "sqlite":
+                existentes = {linha[1] for linha in conn.execute(text(f"PRAGMA table_info({tabela})")).fetchall()}
+                if coluna not in existentes:
+                    conn.execute(text(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}"))
+            else:
+                conn.execute(text(f"ALTER TABLE {tabela} ADD COLUMN IF NOT EXISTS {coluna} {tipo}"))
+    except Exception:
+        # A expansão da agenda não deve impedir a inicialização do sistema.
+        pass
+
+
+def _garantir_colunas_agenda_ceaf() -> None:
+    colunas = {
+        "paciente_ceaf_id": "INTEGER",
+        "paciente_clinico_id": "INTEGER",
+        "data_original": "DATE",
+        "motivo_reagendamento": "TEXT",
+        "tipo_motivo_reagendamento": "VARCHAR",
+        "reagendado_em": "TIMESTAMP",
+        "reagendado_por": "VARCHAR",
+    }
+    for coluna, tipo in colunas.items():
+        _adicionar_coluna_se_nao_existir("agenda_integrada", coluna, tipo)
+
+
+def _usuario_atual_identificacao(current) -> str:
+    return (
+        getattr(current, "nome", None)
+        or getattr(current, "email", None)
+        or "sistema"
+    )
+
+
+def _telefone_ceaf(paciente: PacienteCEAF) -> Optional[str]:
+    return paciente.telefone_celular or paciente.telefone or paciente.telefone_comercial
+
+
+def _paciente_ceaf_resumo(paciente: PacienteCEAF) -> dict:
+    return {
+        "id": paciente.id,
+        "nome": paciente.nome,
+        "cpf": paciente.cpf,
+        "cns": paciente.cns,
+        "telefone": _telefone_ceaf(paciente),
+        "telefone_celular": paciente.telefone_celular,
+        "municipio": paciente.municipio,
+        "logradouro": paciente.logradouro,
+        "numero_residencia": paciente.numero_residencia,
+        "complemento_residencia": paciente.complemento_residencia,
+        "medicamento_prescrito": paciente.medicamento_prescrito,
+        "situacao_lme": paciente.situacao_lme,
+        "data_inicio_medicamento": paciente.data_inicio_medicamento,
+        "data_fim_vigencia": paciente.data_fim_vigencia,
+        "paciente_clinico_id": paciente.paciente_clinico_id,
+        "paciente_agenda_id": paciente.paciente_agenda_id,
+        "conversao_status": paciente.conversao_status,
+    }
+
+_garantir_colunas_agenda_ceaf()
 
 
 
@@ -359,7 +427,13 @@ def criar_agendamento(
             detail="Não é permitido criar agendamento em data passada."
         )
 
-    tipos_validos = {"INCLUSAO", "RETIRADA", "RENOVACAO", "ADEQUACAO", "ENCERRAMENTO"}
+    tipos_validos = {
+        "INCLUSAO", "RETIRADA", "RENOVACAO", "ADEQUACAO", "ENCERRAMENTO",
+        "RETIRADA_MEDICAMENTO", "RENOVACAO_LME", "RENOVACAO_LAUDO",
+        "CONSULTA_FARMACEUTICA", "SERVICO_RAPIDO", "PENDENCIA_DOCUMENTAL",
+        "RISCO_PERDA_MEDICACAO", "RISCO_ENCERRAMENTO_PROCESSO",
+        "RETORNO_PLANO_CUIDADO", "RETORNO_INTERVENCAO"
+    }
     prioridades_validas = {"NORMAL", "IMPORTANTE", "URGENTE"}
 
     if dados.tipo_evento and dados.tipo_evento.upper() not in tipos_validos:
@@ -408,8 +482,29 @@ def criar_agendamento(
     payload["tipo_evento"] = payload.get("tipo_evento", "").upper()
     payload["prioridade"] = prioridade
 
+    paciente_ceaf = None
+    if payload.get("paciente_ceaf_id"):
+        paciente_ceaf = db.query(PacienteCEAF).filter(PacienteCEAF.id == payload["paciente_ceaf_id"]).first()
+        if not paciente_ceaf:
+            raise HTTPException(status_code=404, detail="Paciente CEAF não encontrado")
+
+        payload["paciente_nome"] = payload.get("paciente_nome") or paciente_ceaf.nome
+        payload["telefone"] = payload.get("telefone") or _telefone_ceaf(paciente_ceaf)
+        payload["paciente_clinico_id"] = payload.get("paciente_clinico_id") or paciente_ceaf.paciente_clinico_id
+        payload["paciente_id"] = payload.get("paciente_id") or paciente_ceaf.paciente_agenda_id
+        payload["medicamento"] = payload.get("medicamento") or paciente_ceaf.medicamento_prescrito
+        payload["situacao_laudo"] = payload.get("situacao_laudo") or paciente_ceaf.situacao_lme
+        payload["data_inicio_vigencia"] = payload.get("data_inicio_vigencia") or paciente_ceaf.data_inicio_medicamento
+        payload["data_fim_vigencia"] = payload.get("data_fim_vigencia") or paciente_ceaf.data_fim_vigencia
+        payload["referencia_tipo"] = payload.get("referencia_tipo") or "CEAF"
+        payload["referencia_id"] = payload.get("referencia_id") or paciente_ceaf.id
+        payload["servico_origem"] = payload.get("servico_origem") or "CEAF"
+
     if medicamento_catalogo:
         payload["medicamento"] = medicamento_catalogo.descricao_completa
+
+    if payload.get("data_evento"):
+        payload["data_original"] = payload.get("data_evento")
 
     agenda = AgendaIntegrada(
         **payload
@@ -440,6 +535,8 @@ def listar_agenda(
     data_inicio: Optional[date] = None,
     data_fim: Optional[date] = None,
     status: Optional[str] = None,
+    origem: Optional[str] = None,
+    tipo_evento: Optional[str] = None,
     db: Session = Depends(get_db_consultorio),
     current=Depends(get_current_user_consultorio)
 ):
@@ -459,6 +556,12 @@ def listar_agenda(
         query = query.filter(
             AgendaIntegrada.status == status
         )
+
+    if origem:
+        query = query.filter(func.lower(AgendaIntegrada.servico_origem) == origem.lower())
+
+    if tipo_evento:
+        query = query.filter(func.lower(AgendaIntegrada.tipo_evento) == tipo_evento.lower())
 
     eventos = query.order_by(
         AgendaIntegrada.data_evento.asc()
@@ -782,6 +885,9 @@ def atualizar_agendamento(
             detail="Agendamento não encontrado"
         )
 
+    data_anterior = agenda.data_evento
+    status_anterior = agenda.status
+
     for campo, valor in dados.model_dump(
         exclude_unset=True
     ).items():
@@ -818,6 +924,22 @@ def atualizar_agendamento(
                 "capacidade": capacidade
             }
 
+    if dados.data_evento and data_anterior != agenda.data_evento:
+        if not agenda.data_original:
+            agenda.data_original = data_anterior
+        historico = AgendaHistorico(
+            agenda_id=agenda.id,
+            acao="ALTERACAO_DATA",
+            data_original=data_anterior,
+            nova_data=agenda.data_evento,
+            status_original=status_anterior,
+            novo_status=agenda.status,
+            motivo=agenda.motivo_reagendamento or "Alteração manual de data",
+            tipo_motivo=agenda.tipo_motivo_reagendamento or "equipe",
+            usuario=_usuario_atual_identificacao(current),
+        )
+        db.add(historico)
+
     db.commit()
     db.refresh(agenda)
 
@@ -844,6 +966,7 @@ def atualizar_status_agenda(
             detail="Agendamento não encontrado"
         )
 
+    status_anterior = agenda.status
     agenda.status = dados.status
 
     agenda.data_status = datetime.utcnow()
@@ -855,6 +978,19 @@ def atualizar_status_agenda(
         agenda.observacoes = dados.observacoes
 
     agenda.atualizado_em = datetime.utcnow()
+
+    if status_anterior != agenda.status:
+        db.add(AgendaHistorico(
+            agenda_id=agenda.id,
+            acao="ALTERACAO_STATUS",
+            data_original=agenda.data_evento,
+            nova_data=agenda.data_evento,
+            status_original=status_anterior,
+            novo_status=agenda.status,
+            motivo=dados.observacoes,
+            tipo_motivo="equipe",
+            usuario=_usuario_atual_identificacao(current),
+        ))
 
     proximo_agendamento = None
 
@@ -889,6 +1025,204 @@ def atualizar_status_agenda(
         "data_status": agenda.data_status,
         "usuario_status": agenda.usuario_status,
     }
+
+
+
+@router.get("/agenda/pacientes-ceaf/buscar")
+def buscar_pacientes_ceaf_agenda(
+    termo: str,
+    limite: int = 30,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    if not termo or len(termo.strip()) < 3:
+        return {"total": 0, "pacientes": []}
+
+    termo_limpo = termo.strip()
+    termo_like = f"%{termo_limpo}%"
+    somente_digitos = "".join(ch for ch in termo_limpo if ch.isdigit())
+
+    query = db.query(PacienteCEAF).filter(PacienteCEAF.ativo == True)
+    filtros = [PacienteCEAF.nome.ilike(termo_like), PacienteCEAF.medicamento_prescrito.ilike(termo_like)]
+    if somente_digitos:
+        digitos_like = f"%{somente_digitos}%"
+        filtros.extend([PacienteCEAF.cpf.ilike(digitos_like), PacienteCEAF.cns.ilike(digitos_like)])
+
+    pacientes = query.filter(or_(*filtros)).order_by(PacienteCEAF.nome.asc()).limit(max(1, min(limite, 100))).all()
+    return {"total": len(pacientes), "pacientes": [_paciente_ceaf_resumo(p) for p in pacientes]}
+
+
+@router.get("/agenda/pacientes-ceaf/{paciente_ceaf_id}/contexto")
+def obter_contexto_paciente_ceaf_agenda(
+    paciente_ceaf_id: int,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    paciente = db.query(PacienteCEAF).filter(PacienteCEAF.id == paciente_ceaf_id).first()
+    if not paciente:
+        raise HTTPException(status_code=404, detail="Paciente CEAF não encontrado")
+
+    agenda_aberta = db.query(AgendaIntegrada).filter(
+        AgendaIntegrada.paciente_ceaf_id == paciente.id,
+        AgendaIntegrada.status.in_(["agendado", "notificado", "reagendado", "AGENDADO"]),
+    ).order_by(AgendaIntegrada.data_evento.asc()).limit(10).all()
+
+    sugestao_data = None
+    tipo_sugerido = "RETIRADA_MEDICAMENTO"
+    if paciente.data_fim_vigencia:
+        tipo_sugerido = "RENOVACAO_LME"
+        sugestao_data = paciente.data_fim_vigencia - timedelta(days=30)
+        if sugestao_data < date.today():
+            sugestao_data = date.today()
+        if not data_tem_atendimento(sugestao_data):
+            sugestao_data = ajustar_para_proximo_dia_atendimento(sugestao_data)
+
+    return {
+        "paciente": _paciente_ceaf_resumo(paciente),
+        "sugestao": {
+            "tipo_evento": tipo_sugerido,
+            "servico_origem": "CEAF",
+            "data_evento": sugestao_data,
+            "prioridade": "URGENTE" if paciente.data_fim_vigencia and paciente.data_fim_vigencia <= date.today() + timedelta(days=15) else "NORMAL",
+        },
+        "agenda_aberta": agenda_aberta,
+    }
+
+
+@router.post("/agenda/gerar-ceaf")
+def gerar_agenda_ceaf_automatica(
+    dias_antes_vigencia: int = 30,
+    limite: int = 1000,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    exigir_farmaceutico_ou_admin(current)
+
+    hoje = date.today()
+    pacientes = db.query(PacienteCEAF).filter(
+        PacienteCEAF.ativo == True,
+        PacienteCEAF.data_fim_vigencia.isnot(None),
+    ).order_by(PacienteCEAF.data_fim_vigencia.asc()).limit(max(1, min(limite, 5000))).all()
+
+    criados = 0
+    existentes = 0
+    ignorados = 0
+    exemplos = []
+
+    for paciente in pacientes:
+        data_base = paciente.data_fim_vigencia - timedelta(days=max(0, min(dias_antes_vigencia, 120)))
+        if data_base < hoje:
+            data_base = hoje
+        if not data_tem_atendimento(data_base):
+            data_base = ajustar_para_proximo_dia_atendimento(data_base)
+
+        existente = db.query(AgendaIntegrada).filter(
+            AgendaIntegrada.paciente_ceaf_id == paciente.id,
+            AgendaIntegrada.tipo_evento.in_(["RENOVACAO_LME", "RENOVACAO_LAUDO"]),
+            AgendaIntegrada.status.in_(["agendado", "notificado", "reagendado", "AGENDADO"]),
+        ).first()
+        if existente:
+            existentes += 1
+            continue
+
+        if not paciente.nome:
+            ignorados += 1
+            continue
+
+        prioridade = "URGENTE" if paciente.data_fim_vigencia <= hoje + timedelta(days=15) else "NORMAL"
+        agenda = AgendaIntegrada(
+            servico_origem="CEAF",
+            tipo_evento="RENOVACAO_LME",
+            prioridade=prioridade,
+            titulo="Renovação de LME - CEAF",
+            paciente_id=paciente.paciente_agenda_id,
+            paciente_ceaf_id=paciente.id,
+            paciente_clinico_id=paciente.paciente_clinico_id,
+            paciente_nome=paciente.nome,
+            telefone=_telefone_ceaf(paciente),
+            medicamento=paciente.medicamento_prescrito,
+            situacao_laudo=paciente.situacao_lme,
+            data_evento=data_base,
+            data_original=data_base,
+            data_inicio_vigencia=paciente.data_inicio_medicamento,
+            data_fim_vigencia=paciente.data_fim_vigencia,
+            referencia_tipo="CEAF",
+            referencia_id=paciente.id,
+            origem_importacao="CEAF_AUTOMATICO",
+            observacoes="Agendamento automático gerado a partir da vigência CEAF.",
+            notificar_whatsapp=True,
+        )
+        db.add(agenda)
+        criados += 1
+        if len(exemplos) < 5:
+            exemplos.append({"paciente": paciente.nome, "data_evento": data_base, "medicamento": paciente.medicamento_prescrito})
+
+    db.commit()
+    return {"mensagem": "Agenda CEAF processada", "criados": criados, "existentes": existentes, "ignorados": ignorados, "exemplos": exemplos}
+
+
+@router.post("/agenda/{agenda_id}/reagendar")
+def reagendar_agendamento(
+    agenda_id: int,
+    dados: AgendaReagendarCreate,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    agenda = db.query(AgendaIntegrada).filter(AgendaIntegrada.id == agenda_id).first()
+    if not agenda:
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado")
+    if dados.nova_data < date.today():
+        raise HTTPException(status_code=400, detail="Não é permitido reagendar para data passada.")
+    if not dados.motivo or not dados.motivo.strip():
+        raise HTTPException(status_code=400, detail="Informe o motivo do reagendamento.")
+
+    data_original = agenda.data_evento
+    status_original = agenda.status
+    nova_data = dados.nova_data
+    data_ajustada = None
+    if not data_tem_atendimento(nova_data):
+        data_ajustada = ajustar_para_proximo_dia_atendimento(nova_data)
+        nova_data = data_ajustada
+
+    if not agenda.data_original:
+        agenda.data_original = data_original
+    agenda.data_evento = nova_data
+    agenda.status = "reagendado"
+    agenda.motivo_reagendamento = dados.motivo.strip()
+    agenda.tipo_motivo_reagendamento = (dados.tipo_motivo or "equipe").strip().lower()
+    agenda.reagendado_em = datetime.utcnow()
+    agenda.reagendado_por = _usuario_atual_identificacao(current)
+    agenda.atualizado_em = datetime.utcnow()
+    if dados.observacoes:
+        agenda.observacoes = f"{agenda.observacoes or ''}\nReagendamento: {dados.observacoes}".strip()
+
+    db.add(AgendaHistorico(
+        agenda_id=agenda.id,
+        acao="REAGENDAMENTO",
+        data_original=data_original,
+        nova_data=nova_data,
+        status_original=status_original,
+        novo_status="reagendado",
+        motivo=dados.motivo.strip(),
+        tipo_motivo=(dados.tipo_motivo or "equipe").strip().lower(),
+        usuario=_usuario_atual_identificacao(current),
+    ))
+    db.commit()
+    db.refresh(agenda)
+    return {"mensagem": "Agendamento reagendado.", "agenda": agenda, "data_ajustada": data_ajustada}
+
+
+@router.get("/agenda/{agenda_id}/historico")
+def listar_historico_agendamento(
+    agenda_id: int,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    agenda = db.query(AgendaIntegrada).filter(AgendaIntegrada.id == agenda_id).first()
+    if not agenda:
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado")
+    historico = db.query(AgendaHistorico).filter(AgendaHistorico.agenda_id == agenda_id).order_by(AgendaHistorico.criado_em.desc()).all()
+    return {"agenda_id": agenda_id, "total": len(historico), "historico": historico}
 
 @router.get("/agenda-retornos")
 def agenda_retornos(

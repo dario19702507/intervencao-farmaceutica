@@ -585,12 +585,39 @@ class AgendaIntegrada(BaseConsultorio):
     referencia_tipo = Column(String, nullable=True)
     referencia_id = Column(Integer, nullable=True)
 
+    # Expansão 15D.4: agenda única com origem CEAF e suporte a reagendamento.
+    paciente_ceaf_id = Column(Integer, ForeignKey("pacientes_ceaf.id"), nullable=True, index=True)
+    paciente_clinico_id = Column(Integer, ForeignKey("pacientes_clinicos.id"), nullable=True, index=True)
+    data_original = Column(Date, nullable=True)
+    motivo_reagendamento = Column(Text, nullable=True)
+    tipo_motivo_reagendamento = Column(String, nullable=True)
+    reagendado_em = Column(DateTime, nullable=True)
+    reagendado_por = Column(String, nullable=True)
+
     observacoes = Column(Text, nullable=True)
 
     criado_em = Column(DateTime, default=datetime.utcnow)
     atualizado_em = Column(DateTime, default=datetime.utcnow)
 
     evento_pai_id = Column(Integer, nullable=True)
+
+
+class AgendaHistorico(BaseConsultorio):
+    __tablename__ = "agenda_historico"
+
+    id = Column(Integer, primary_key=True, index=True)
+    agenda_id = Column(Integer, ForeignKey("agenda_integrada.id"), nullable=False, index=True)
+
+    acao = Column(String, nullable=False, index=True)
+    data_original = Column(Date, nullable=True)
+    nova_data = Column(Date, nullable=True)
+    status_original = Column(String, nullable=True)
+    novo_status = Column(String, nullable=True)
+
+    motivo = Column(Text, nullable=True)
+    tipo_motivo = Column(String, nullable=True)
+    usuario = Column(String, nullable=True)
+    criado_em = Column(DateTime, default=datetime.utcnow, index=True)
 
 
 class WhatsAppEnvio(BaseConsultorio):
