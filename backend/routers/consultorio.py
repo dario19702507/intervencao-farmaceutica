@@ -10,7 +10,7 @@ from datetime import datetime, date, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import Column, Integer, String, Date, DateTime, Text, ForeignKey, Boolean, Float, func
+from sqlalchemy import Column, Integer, String, Date, DateTime, Text, ForeignKey, Boolean, Float, func, or_
 from collections import defaultdict
 from openpyxl import Workbook
 from sqlalchemy.orm import declarative_base, Session, relationship
@@ -1042,7 +1042,9 @@ def buscar_pacientes_ceaf_agenda(
     termo_like = f"%{termo_limpo}%"
     somente_digitos = "".join(ch for ch in termo_limpo if ch.isdigit())
 
-    query = db.query(PacienteCEAF).filter(PacienteCEAF.ativo == True)
+    # Registros importados antes da coluna ativo podem estar com NULL no PostgreSQL.
+    # Para a agenda, consideramos ativos tanto True quanto NULL, e excluímos apenas False.
+    query = db.query(PacienteCEAF).filter(or_(PacienteCEAF.ativo == True, PacienteCEAF.ativo.is_(None)))
     filtros = [PacienteCEAF.nome.ilike(termo_like), PacienteCEAF.medicamento_prescrito.ilike(termo_like)]
     if somente_digitos:
         digitos_like = f"%{somente_digitos}%"
