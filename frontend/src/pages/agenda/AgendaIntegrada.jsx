@@ -7,7 +7,7 @@ export default function AgendaIntegrada() {
   const [eventos, setEventos] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filtroServico, setFiltroServico] = useState("todos");
-  const [filtroStatus, setFiltroStatus] = useState("todos");
+  const [filtroStatus, setFiltroStatus] = useState("ativos");
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [capacidadeDia, setCapacidadeDia] = useState(null);
   const [sugestoesDatas, setSugestoesDatas] = useState([]);
@@ -92,8 +92,11 @@ export default function AgendaIntegrada() {
       const servicoOk =
         filtroServico === "todos" || evento.servico_origem === filtroServico;
 
+      const statusOcultoPadrao = ["cancelado", "reagendado", "realizado"];
       const statusOk =
-        filtroStatus === "todos" || evento.status === filtroStatus;
+        filtroStatus === "todos" ||
+        (filtroStatus === "ativos" && !statusOcultoPadrao.includes(evento.status)) ||
+        evento.status === filtroStatus;
 
       if (!servicoOk || !statusOk) {
         return false;
@@ -137,6 +140,18 @@ export default function AgendaIntegrada() {
   }, [eventos, filtroServico, filtroStatus, filtroAlerta]);
 
   const hoje = new Date().toISOString().slice(0, 10);
+
+  function laudoVencido(dataFimVigencia) {
+    if (!dataFimVigencia) return false;
+    const dataFim = new Date(`${dataFimVigencia}T00:00:00`);
+    const hojeLocal = new Date();
+    hojeLocal.setHours(0, 0, 0, 0);
+    return dataFim < hojeLocal;
+  }
+
+  const retiradaComLaudoVencido =
+    novoEvento.tipo_evento === "retirada_medicamento" &&
+    laudoVencido(novoEvento.data_fim_vigencia);
 
   const resumoOperacional = useMemo(() => {
     const proximos7 = eventos.filter((evento) => {
@@ -235,14 +250,14 @@ export default function AgendaIntegrada() {
         paciente_nome: dadosPaciente.nome || "",
         telefone: dadosPaciente.telefone || dadosPaciente.telefone_celular || "",
         servico_origem: sugestao.servico_origem || "CEAF",
-        tipo_evento: sugestao.tipo_evento || "RENOVACAO_LME",
+        tipo_evento: "retirada_medicamento",
         prioridade: sugestao.prioridade || "NORMAL",
         medicamento: dadosPaciente.medicamento_prescrito || "",
         situacao_laudo: dadosPaciente.situacao_lme || "",
-        data_evento: sugestao.data_evento || "",
+        data_evento: "",
         data_inicio_vigencia: dadosPaciente.data_inicio_medicamento || "",
         data_fim_vigencia: dadosPaciente.data_fim_vigencia || "",
-        observacoes: `Agendamento CEAF. Município: ${dadosPaciente.municipio || "não informado"}.`,
+        observacoes: "",
         notificar_whatsapp: true,
       });
 
@@ -370,6 +385,11 @@ export default function AgendaIntegrada() {
   async function salvarNovoEvento() {
     if (!novoEvento.paciente_nome.trim()) {
       alert("Informe o nome do paciente.");
+      return;
+    }
+
+    if (retiradaComLaudoVencido) {
+      alert("Não é permitido agendar retirada de medicamento quando a vigência da LME está vencida. Selecione renovação de LME ou atualize a vigência antes de agendar a retirada.");
       return;
     }
 
@@ -597,15 +617,6 @@ export default function AgendaIntegrada() {
               </div>
             )}
 
-            {contextoCeaf?.paciente && (
-              <div className="clinical-summary full-width-card success">
-                <strong>Resumo CEAF do paciente selecionado</strong>
-                <p><b>Medicamento:</b> {contextoCeaf.paciente.medicamento_prescrito || "não informado"}</p>
-                <p><b>Vigência:</b> {contextoCeaf.paciente.data_fim_vigencia || "não informada"} · <b>Situação LME:</b> {contextoCeaf.paciente.situacao_lme || "não informada"}</p>
-                <p><b>Contato:</b> {contextoCeaf.paciente.telefone || "sem telefone"} · <b>Município:</b> {contextoCeaf.paciente.municipio || "não informado"}</p>
-              </div>
-            )}
-
             <label>
               Buscar paciente cadastrado
               <input
@@ -689,14 +700,23 @@ export default function AgendaIntegrada() {
               Tipo de evento
               <select
                 value={novoEvento.tipo_evento}
-                onChange={(e) =>
-                  setNovoEvento({ ...novoEvento, tipo_evento: e.target.value })
-                }
+                onChange={(e) => {
+                  const tipoSelecionado = e.target.value;
+                  const deveLimparData =
+                    tipoSelecionado === "retirada_medicamento" &&
+                    laudoVencido(novoEvento.data_fim_vigencia);
+
+                  setNovoEvento({
+                    ...novoEvento,
+                    tipo_evento: tipoSelecionado,
+                    data_evento: deveLimparData ? "" : novoEvento.data_evento,
+                  });
+                }}
               >
-                <option value="retorno_plano_cuidado">Retorno plano de cuidado</option>
-                <option value="retorno_intervencao">Retorno intervenção</option>
                 <option value="retirada_medicamento">Retirada de medicamento</option>
                 <option value="RENOVACAO_LME">Renovação de LME CEAF</option>
+                <option value="retorno_plano_cuidado">Retorno plano de cuidado</option>
+                <option value="retorno_intervencao">Retorno intervenção</option>
                 <option value="renovacao_laudo">Renovação de laudo</option>
                 <option value="risco_perda_medicacao">Risco de perda da medicação</option>
                 <option value="risco_encerramento_processo">Risco de encerramento do processo</option>
@@ -728,6 +748,7 @@ export default function AgendaIntegrada() {
               <input
                 type="date"
                 value={novoEvento.data_evento}
+                disabled={retiradaComLaudoVencido}
                 onChange={(e) => {
                   const data = e.target.value;
 
@@ -740,6 +761,12 @@ export default function AgendaIntegrada() {
                 }}
               />
             </label>
+
+            {retiradaComLaudoVencido && (
+              <div className="clinical-summary danger">
+                A data prevista fica bloqueada para retirada de medicamento porque a LME está vencida. Selecione renovação de LME ou atualize a vigência antes de agendar retirada.
+              </div>
+            )}
 
             {capacidadeDia && (
               <div
@@ -813,12 +840,18 @@ export default function AgendaIntegrada() {
               <input
                 type="date"
                 value={novoEvento.data_fim_vigencia}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const novaDataFim = e.target.value;
+                  const deveLimparData =
+                    novoEvento.tipo_evento === "retirada_medicamento" &&
+                    laudoVencido(novaDataFim);
+
                   setNovoEvento({
                     ...novoEvento,
-                    data_fim_vigencia: e.target.value,
-                  })
-                }
+                    data_fim_vigencia: novaDataFim,
+                    data_evento: deveLimparData ? "" : novoEvento.data_evento,
+                  });
+                }}
               />
             </label>
           </div>
@@ -885,6 +918,7 @@ export default function AgendaIntegrada() {
               value={filtroStatus}
               onChange={(e) => setFiltroStatus(e.target.value)}
             >
+              <option value="ativos">Ativos / passíveis de alteração</option>
               <option value="todos">Todos</option>
               <option value="agendado">Agendado</option>
               <option value="notificado">Notificado</option>
