@@ -13,6 +13,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import Column, Integer, String, Date, DateTime, Text, ForeignKey, Boolean, Float, func, or_
 from collections import defaultdict
 from openpyxl import Workbook
+
+
+STATUS_ENCERRADOS_AGENDA = {"cancelado", "realizado", "concluido", "reagendado"}
+STATUS_ATIVOS_AGENDA = {"agendado", "notificado", "retirada_prevista", "renovacao_recomendada", "renovacao_urgente", "risco_interrupcao_tratamento", "faltou"}
+TIPOS_RETIRADA_AGENDA = {"retirada_medicamento", "retirada", "retirada_prevista", "dispensacao"}
+TIPOS_RENOVACAO_AGENDA = {"renovacao_lme", "renovacao_laudo", "pendencia_documental"}
+
 from sqlalchemy.orm import declarative_base, Session, relationship
 from database import engine, SessionLocal
 from auth import ALGORITHM, SECRET_KEY, oauth2_scheme
@@ -322,11 +329,21 @@ def _data_retirada_prevista_mes(inicio_mes: date, fim_mes: date, data_fim_vigenc
 
 
 def _query_retiradas_ceaf_mes(db: Session, inicio_mes: date, fim_mes: date):
+    """Retiradas vinculadas ao CEAF no mês, independentemente da origem visual.
+
+    A conciliação não deve depender exclusivamente de servico_origem="CEAF",
+    porque uma retirada pode ter sido cadastrada como dispensação, mas ainda
+    estar vinculada ao paciente CEAF ou ao paciente clínico convertido.
+    """
     return db.query(AgendaIntegrada).filter(
-        AgendaIntegrada.servico_origem == "CEAF",
-        AgendaIntegrada.tipo_evento.in_(["RETIRADA_MEDICAMENTO", "RETIRADA", "RETIRADA_PREVISTA"]),
+        func.lower(AgendaIntegrada.tipo_evento).in_(TIPOS_RETIRADA_AGENDA),
         AgendaIntegrada.data_evento >= inicio_mes,
         AgendaIntegrada.data_evento <= fim_mes,
+        or_(
+            AgendaIntegrada.paciente_ceaf_id.isnot(None),
+            AgendaIntegrada.servico_origem == "CEAF",
+            func.lower(AgendaIntegrada.servico_origem) == "dispensacao",
+        ),
     )
 
 
@@ -342,10 +359,9 @@ def _retirada_ceaf_existente_mes(db: Session, paciente: PacienteCEAF, inicio_mes
         return None
     return _query_retiradas_ceaf_mes(db, inicio_mes, fim_mes).filter(
         or_(*filtros_paciente),
-        AgendaIntegrada.status.in_([
-            "retirada_prevista", "agendado", "notificado", "reagendado",
-            "realizado", "concluido", "AGENDADO", "REALIZADO", "CONCLUIDO"
-        ])
+        func.lower(AgendaIntegrada.status).in_(
+            STATUS_ATIVOS_AGENDA.union({"realizado", "concluido", "reagendado"})
+        )
     ).first()
 
 
@@ -1646,42 +1662,78 @@ def buscar_notificacoes_agenda(
 ):
     hoje = date.today()
     amanha = hoje + timedelta(days=1)
+    em_15_dias = hoje + timedelta(days=15)
+    em_30_dias = hoje + timedelta(days=30)
 
-    risco_interrupcao = db.query(AgendaIntegrada).filter(
-        AgendaIntegrada.status == "risco_interrupcao_tratamento"
+    risco_interrupcao_agenda = db.query(AgendaIntegrada).filter(
+        func.lower(AgendaIntegrada.status) == "risco_interrupcao_tratamento"
+    ).all()
+
+    lme_vencidas_ceaf = db.query(PacienteCEAF).filter(
+        or_(PacienteCEAF.ativo == True, PacienteCEAF.ativo.is_(None)),
+        PacienteCEAF.data_fim_vigencia.isnot(None),
+        PacienteCEAF.data_fim_vigencia < hoje,
     ).all()
 
     renovacoes_urgentes = db.query(AgendaIntegrada).filter(
-        AgendaIntegrada.status == "renovacao_urgente"
+        func.lower(AgendaIntegrada.tipo_evento).in_(TIPOS_RENOVACAO_AGENDA),
+        AgendaIntegrada.data_fim_vigencia.isnot(None),
+        AgendaIntegrada.data_fim_vigencia >= hoje,
+        AgendaIntegrada.data_fim_vigencia <= em_15_dias,
+        func.lower(AgendaIntegrada.status).notin_(STATUS_ENCERRADOS_AGENDA),
     ).all()
 
     renovacoes_recomendadas = db.query(AgendaIntegrada).filter(
-        AgendaIntegrada.status == "renovacao_recomendada"
+        func.lower(AgendaIntegrada.tipo_evento).in_(TIPOS_RENOVACAO_AGENDA),
+        AgendaIntegrada.data_fim_vigencia.isnot(None),
+        AgendaIntegrada.data_fim_vigencia > em_15_dias,
+        AgendaIntegrada.data_fim_vigencia <= em_30_dias,
+        func.lower(AgendaIntegrada.status).notin_(STATUS_ENCERRADOS_AGENDA),
+    ).all()
+
+    # Complementa a central com pacientes CEAF que ainda não têm evento de renovação.
+    ceaf_urgentes = db.query(PacienteCEAF).filter(
+        or_(PacienteCEAF.ativo == True, PacienteCEAF.ativo.is_(None)),
+        PacienteCEAF.data_fim_vigencia.isnot(None),
+        PacienteCEAF.data_fim_vigencia >= hoje,
+        PacienteCEAF.data_fim_vigencia <= em_15_dias,
+    ).all()
+    ceaf_recomendados = db.query(PacienteCEAF).filter(
+        or_(PacienteCEAF.ativo == True, PacienteCEAF.ativo.is_(None)),
+        PacienteCEAF.data_fim_vigencia.isnot(None),
+        PacienteCEAF.data_fim_vigencia > em_15_dias,
+        PacienteCEAF.data_fim_vigencia <= em_30_dias,
     ).all()
 
     dispensacoes_amanha = db.query(AgendaIntegrada).filter(
-        AgendaIntegrada.servico_origem == "dispensacao",
+        func.lower(AgendaIntegrada.tipo_evento).in_(TIPOS_RETIRADA_AGENDA),
         AgendaIntegrada.data_evento == amanha,
-        AgendaIntegrada.status == "agendado"
+        func.lower(AgendaIntegrada.status).in_({"agendado", "notificado"})
     ).all()
 
     consultas_amanha = db.query(AgendaIntegrada).filter(
-        AgendaIntegrada.servico_origem == "consultorio",
+        func.lower(AgendaIntegrada.servico_origem) == "consultorio",
         AgendaIntegrada.data_evento == amanha,
-        AgendaIntegrada.status == "agendado"
+        func.lower(AgendaIntegrada.status).in_({"agendado", "notificado"})
     ).all()
 
     return {
         "resumo": {
-            "risco_interrupcao": len(risco_interrupcao),
-            "renovacoes_urgentes": len(renovacoes_urgentes),
-            "renovacoes_recomendadas": len(renovacoes_recomendadas),
+            "risco_interrupcao": len(risco_interrupcao_agenda) + len(lme_vencidas_ceaf),
+            "renovacoes_urgentes": len(renovacoes_urgentes) + len(ceaf_urgentes),
+            "renovacoes_recomendadas": len(renovacoes_recomendadas) + len(ceaf_recomendados),
             "dispensacoes_amanha": len(dispensacoes_amanha),
             "consultas_amanha": len(consultas_amanha),
+            "ceaf_lme_vencidas": len(lme_vencidas_ceaf),
+            "ceaf_lme_vencendo_15_dias": len(ceaf_urgentes),
+            "ceaf_lme_vencendo_30_dias": len(ceaf_recomendados),
         },
-        "risco_interrupcao": risco_interrupcao,
+        "risco_interrupcao": risco_interrupcao_agenda,
+        "ceaf_lme_vencidas": [_paciente_ceaf_resumo(p) for p in lme_vencidas_ceaf[:100]],
         "renovacoes_urgentes": renovacoes_urgentes,
         "renovacoes_recomendadas": renovacoes_recomendadas,
+        "ceaf_renovacoes_urgentes": [_paciente_ceaf_resumo(p) for p in ceaf_urgentes[:100]],
+        "ceaf_renovacoes_recomendadas": [_paciente_ceaf_resumo(p) for p in ceaf_recomendados[:100]],
         "dispensacoes_amanha": dispensacoes_amanha,
         "consultas_amanha": consultas_amanha,
     }

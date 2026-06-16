@@ -89,14 +89,13 @@ export default function AgendaIntegrada() {
 
   const eventosFiltrados = useMemo(() => {
     return eventos.filter((evento) => {
-      const servicoOk =
-        filtroServico === "todos" || evento.servico_origem === filtroServico;
+      const status = normalizarTexto(evento.status);
+      const servicoOk = categoriaOk(evento, filtroServico);
 
-      const statusOcultoPadrao = ["cancelado", "reagendado", "realizado"];
       const statusOk =
         filtroStatus === "todos" ||
-        (filtroStatus === "ativos" && !statusOcultoPadrao.includes(evento.status)) ||
-        evento.status === filtroStatus;
+        (filtroStatus === "ativos" && ehAtivoOperacional(evento)) ||
+        status === filtroStatus;
 
       if (!servicoOk || !statusOk) {
         return false;
@@ -105,12 +104,11 @@ export default function AgendaIntegrada() {
       if (filtroAlerta === "dispensacoes_amanha") {
         const amanha = new Date();
         amanha.setDate(amanha.getDate() + 1);
-
         const dataAmanha = amanha.toISOString().split("T")[0];
 
         return (
-          evento.servico_origem === "dispensacao" &&
-          evento.status === "agendado" &&
+          ehRetirada(evento) &&
+          ["agendado", "notificado"].includes(status) &&
           evento.data_evento === dataAmanha
         );
       }
@@ -118,21 +116,28 @@ export default function AgendaIntegrada() {
       if (filtroAlerta === "dispensacoes_atrasadas") {
         const hojeLocal = new Date();
         hojeLocal.setHours(0, 0, 0, 0);
-
         const dataEvento = evento.data_evento
           ? new Date(evento.data_evento + "T00:00:00")
           : null;
 
         return (
-          evento.servico_origem === "dispensacao" &&
-          ["agendado", "notificado", "reagendado"].includes(evento.status) &&
+          ehRetirada(evento) &&
+          ["agendado", "notificado", "retirada_prevista"].includes(status) &&
           dataEvento &&
           dataEvento < hojeLocal
         );
       }
 
+      if (filtroAlerta === "renovacao_urgente") {
+        return ehRenovacao(evento) && ["agendado", "notificado", "renovacao_urgente"].includes(status);
+      }
+
+      if (filtroAlerta === "renovacao_recomendada") {
+        return ehRenovacao(evento) && ["agendado", "notificado", "renovacao_recomendada"].includes(status);
+      }
+
       if (filtroAlerta) {
-        return evento.status === filtroAlerta;
+        return status === filtroAlerta;
       }
 
       return true;
@@ -140,6 +145,46 @@ export default function AgendaIntegrada() {
   }, [eventos, filtroServico, filtroStatus, filtroAlerta]);
 
   const hoje = new Date().toISOString().slice(0, 10);
+
+  const statusEncerradosAgenda = ["cancelado", "reagendado", "realizado", "concluido"];
+  const statusOperacionaisAgenda = [
+    "agendado",
+    "notificado",
+    "retirada_prevista",
+    "renovacao_recomendada",
+    "renovacao_urgente",
+    "risco_interrupcao_tratamento",
+    "faltou",
+  ];
+  const tiposRetiradaAgenda = ["retirada_medicamento", "retirada", "retirada_prevista", "dispensacao"];
+  const tiposRenovacaoAgenda = ["renovacao_lme", "renovacao_laudo", "pendencia_documental", "renovacao_lme_ceaf"];
+
+  function normalizarTexto(valor) {
+    return String(valor || "").trim().toLowerCase();
+  }
+
+  function ehRetirada(evento) {
+    return tiposRetiradaAgenda.includes(normalizarTexto(evento.tipo_evento));
+  }
+
+  function ehRenovacao(evento) {
+    return tiposRenovacaoAgenda.includes(normalizarTexto(evento.tipo_evento));
+  }
+
+  function ehAtivoOperacional(evento) {
+    const status = normalizarTexto(evento.status);
+    return !statusEncerradosAgenda.includes(status);
+  }
+
+  function categoriaOk(evento, filtro) {
+    const origem = normalizarTexto(evento.servico_origem);
+    if (filtro === "todos") return true;
+    if (filtro === "consultorio") return origem === "consultorio";
+    if (filtro === "intervencao") return origem === "intervencao";
+    if (filtro === "dispensacao") return ehRetirada(evento);
+    if (filtro === "renovacao_laudo") return ehRenovacao(evento);
+    return true;
+  }
 
   function laudoVencido(dataFimVigencia) {
     if (!dataFimVigencia) return false;
@@ -154,7 +199,13 @@ export default function AgendaIntegrada() {
     laudoVencido(novoEvento.data_fim_vigencia);
 
   const resumoOperacional = useMemo(() => {
-    const proximos7 = eventos.filter((evento) => {
+    const eventosAtivos = eventos.filter(ehAtivoOperacional);
+    const eventosConfirmados = eventosAtivos.filter((evento) => {
+      const status = normalizarTexto(evento.status);
+      return ["agendado", "notificado", "faltou", "renovacao_recomendada", "renovacao_urgente", "risco_interrupcao_tratamento"].includes(status);
+    });
+
+    const proximos7 = eventosConfirmados.filter((evento) => {
       if (!evento.data_evento) return false;
 
       const dataEvento = new Date(`${evento.data_evento}T00:00:00`);
@@ -165,13 +216,14 @@ export default function AgendaIntegrada() {
     });
 
     return {
-      hoje: eventos.filter((e) => e.data_evento === hoje).length,
+      hoje: eventosConfirmados.filter((e) => e.data_evento === hoje).length,
       proximos7: proximos7.length,
-      pendentes: eventos.filter((e) => e.status === "agendado").length,
-      atrasados: eventos.filter(
-        (e) => e.data_evento < hoje && e.status === "agendado"
+      pendentes: eventosConfirmados.filter((e) => ["agendado", "notificado", "faltou"].includes(normalizarTexto(e.status))).length,
+      retiradasPrevistas: eventosAtivos.filter((e) => normalizarTexto(e.status) === "retirada_prevista").length,
+      atrasados: eventosAtivos.filter(
+        (e) => e.data_evento < hoje && ["agendado", "notificado", "retirada_prevista"].includes(normalizarTexto(e.status))
       ).length,
-      realizados: eventos.filter((e) => e.status === "realizado").length,
+      realizados: eventos.filter((e) => ["realizado", "concluido"].includes(normalizarTexto(e.status))).length,
     };
   }, [eventos, hoje]);
 
@@ -514,7 +566,7 @@ export default function AgendaIntegrada() {
         <CentralNotificacoes />
       )}
 
-      <div className="cards-grid five">
+      <div className="cards-grid six">
         <div className="metric-card">
           <span>Hoje</span>
           <strong>{resumoOperacional.hoje}</strong>
@@ -528,6 +580,11 @@ export default function AgendaIntegrada() {
         <div className="metric-card">
           <span>Pendentes</span>
           <strong>{resumoOperacional.pendentes}</strong>
+        </div>
+
+        <div className="metric-card warning">
+          <span>Retiradas previstas</span>
+          <strong>{resumoOperacional.retiradasPrevistas}</strong>
         </div>
 
         <div className="metric-card danger">
@@ -898,7 +955,7 @@ export default function AgendaIntegrada() {
 
         <div className="filters-row">
           <label>
-            Serviço
+            Categoria
             <select
               value={filtroServico}
               onChange={(e) => setFiltroServico(e.target.value)}
@@ -908,7 +965,6 @@ export default function AgendaIntegrada() {
               <option value="intervencao">Intervenções</option>
               <option value="dispensacao">Dispensação</option>
               <option value="renovacao_laudo">Renovação de laudo</option>
-              <option value="CEAF">CEAF</option>
             </select>
           </label>
 
@@ -922,6 +978,7 @@ export default function AgendaIntegrada() {
               <option value="todos">Todos</option>
               <option value="agendado">Agendado</option>
               <option value="notificado">Notificado</option>
+              <option value="retirada_prevista">Retirada prevista</option>
               <option value="realizado">Realizado</option>
               <option value="faltou">Faltou</option>
               <option value="reagendado">Reagendado</option>
