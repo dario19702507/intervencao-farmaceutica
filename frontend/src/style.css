@@ -2391,3 +2391,19 @@ button {
     grid-column: span 1;
   }
 }
+
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.alert-info {
+  border-left-color: #2563eb;
+  background: #eff6ff;
+}
+
+.alert-info .alert-content strong {
+  color: #1d4ed8;
+}

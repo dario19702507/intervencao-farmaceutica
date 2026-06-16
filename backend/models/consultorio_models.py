@@ -44,6 +44,13 @@ class PacienteCEAF(BaseConsultorio):
     telefone_celular = Column(String, nullable=True)
 
     origem_arquivo = Column(String, nullable=True)
+
+    paciente_clinico_id = Column(Integer, ForeignKey("pacientes_clinicos.id"), nullable=True, index=True)
+    paciente_agenda_id = Column(Integer, ForeignKey("pacientes_agenda.id"), nullable=True, index=True)
+    convertido_em = Column(DateTime, nullable=True)
+    conversao_status = Column(String, nullable=True, index=True)
+    conversao_observacao = Column(Text, nullable=True)
+
     ativo = Column(Boolean, default=True, index=True)
     criado_em = Column(DateTime, default=datetime.utcnow)
     atualizado_em = Column(DateTime, default=datetime.utcnow)

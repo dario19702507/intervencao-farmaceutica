@@ -42,6 +42,9 @@ function resumoPercentual(valor, total) {
 export default function PacientesCeaf() {
   const [pacientes, setPacientes] = useState([]);
   const [resumo, setResumo] = useState(null);
+  const [resumoConversao, setResumoConversao] = useState(null);
+  const [resultadoConversao, setResultadoConversao] = useState(null);
+  const [convertendo, setConvertendo] = useState(false);
   const [detalhe, setDetalhe] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadingDetalhe, setLoadingDetalhe] = useState(false);
@@ -87,6 +90,15 @@ export default function PacientesCeaf() {
     }
   }
 
+  async function carregarResumoConversao() {
+    try {
+      const response = await api.get("/ceaf/pacientes/conversao/resumo");
+      setResumoConversao(response.data);
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
   async function carregarPacientes(offsetAtual = 0) {
     try {
       setLoading(true);
@@ -119,6 +131,77 @@ export default function PacientesCeaf() {
     }
   }
 
+
+  function montarParametrosConversao() {
+    const params = {
+      apenas_nao_convertidos: true,
+      limite: 5000,
+    };
+
+    if (filtros.termo.trim()) params.termo = filtros.termo.trim();
+    if (filtros.medicamento.trim()) params.medicamento = filtros.medicamento.trim();
+    if (filtros.municipio.trim()) params.municipio = filtros.municipio.trim();
+    if (filtros.situacao_lme.trim()) params.situacao_lme = filtros.situacao_lme.trim();
+    if (filtros.vigencia === "vencidas") params.vigencia_ate = dataISOEmDias(0);
+    if (filtros.vigencia === "30") params.vigencia_ate = dataISOEmDias(30);
+    if (filtros.vigencia === "60") params.vigencia_ate = dataISOEmDias(60);
+
+    return params;
+  }
+
+  async function converterLote() {
+    const temFiltro = Object.values(filtros).some((valor) => String(valor || "").trim());
+    const mensagem = temFiltro
+      ? "Converter em lote apenas os pacientes CEAF filtrados que ainda não foram vinculados ao cadastro clínico?"
+      : "Converter em lote todos os pacientes CEAF ainda não vinculados ao cadastro clínico?";
+
+    if (!window.confirm(mensagem)) return;
+
+    try {
+      setConvertendo(true);
+      setErro("");
+      setResultadoConversao(null);
+      const response = await api.post("/ceaf/pacientes/converter-lote", null, {
+        params: montarParametrosConversao(),
+      });
+      setResultadoConversao(response.data);
+      await carregarResumoConversao();
+      await carregarResumo();
+      await carregarPacientes(offset);
+    } catch (error) {
+      console.error(error);
+      const detalhe = error?.response?.data?.detail;
+      setErro(typeof detalhe === "string" ? detalhe : "Erro ao converter pacientes CEAF em lote.");
+    } finally {
+      setConvertendo(false);
+    }
+  }
+
+  async function converterIndividual(paciente) {
+    if (!window.confirm(`Converter ${paciente.nome} para paciente clínico e cadastro de agenda?`)) return;
+    try {
+      setConvertendo(true);
+      const response = await api.post(`/ceaf/pacientes/${paciente.id}/converter-clinico`);
+      setResultadoConversao({
+        ok: true,
+        total_analisados: 1,
+        convertidos_ou_vinculados: response.data?.resultado?.status === "convertido" ? 1 : 0,
+        ignorados_sem_cpf_cns: response.data?.resultado?.status === "ignorado" ? 1 : 0,
+        amostra_resultados: [response.data?.resultado],
+      });
+      await carregarResumoConversao();
+      await carregarPacientes(offset);
+      if (detalhe?.paciente?.id === paciente.id) {
+        await abrirDetalhe(paciente);
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Erro ao converter paciente CEAF.");
+    } finally {
+      setConvertendo(false);
+    }
+  }
+
   function atualizarFiltro(campo, valor) {
     setFiltros((atual) => ({ ...atual, [campo]: valor }));
   }
@@ -136,6 +219,7 @@ export default function PacientesCeaf() {
 
   useEffect(() => {
     carregarResumo();
+    carregarResumoConversao();
     carregarPacientes(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -169,6 +253,11 @@ export default function PacientesCeaf() {
           <strong>Medicamentos</strong>
           <div>{resumo?.medicamentos_distintos ?? "-"}</div>
           <small>Medicamentos distintos</small>
+        </div>
+        <div className="summary-card">
+          <strong>Convertidos</strong>
+          <div>{resumoConversao?.convertidos ?? "-"}</div>
+          <small>{resumoConversao?.pendentes_conversao ?? "-"} pendente(s)</small>
         </div>
       </div>
 
@@ -234,14 +323,33 @@ export default function PacientesCeaf() {
         </div>
 
         <div className="action-buttons">
-          <button className="primary-button" onClick={pesquisar} disabled={loading}>
+          <button className="primary-button" onClick={pesquisar} disabled={loading || convertendo}>
             {loading ? "Pesquisando..." : "Pesquisar"}
           </button>
-          <button className="secondary-button" onClick={limparFiltros} disabled={loading}>
+          <button className="secondary-button" onClick={limparFiltros} disabled={loading || convertendo}>
             Limpar filtros
           </button>
+          <button className="primary-button" onClick={converterLote} disabled={loading || convertendo}>
+            {convertendo ? "Convertendo..." : "Converter filtrados / pendentes"}
+          </button>
         </div>
+
+        <p className="helper-text">
+          A conversão cria ou vincula o paciente ao cadastro clínico, ao cadastro mestre de agenda e abre prontuário quando necessário. Registros sem CPF e CNS são ignorados para evitar duplicidade.
+        </p>
       </div>
+
+      {resultadoConversao && (
+        <div className="alert-card alert-info">
+          <div className="alert-content">
+            <strong>Resultado da conversão CEAF</strong>
+            <p>
+              Analisados: {resultadoConversao.total_analisados ?? 0} · Convertidos/vinculados: {resultadoConversao.convertidos_ou_vinculados ?? 0} · Novos clínicos: {resultadoConversao.novos_pacientes_clinicos ?? 0} · Novos na agenda: {resultadoConversao.novos_pacientes_agenda ?? 0} · Prontuários criados: {resultadoConversao.prontuarios_criados ?? 0} · Ignorados: {resultadoConversao.ignorados_sem_cpf_cns ?? 0}
+            </p>
+          </div>
+        </div>
+      )}
+      
 
       <div className="form-card ceaf-table-card">
         <div className="section-header-row">
@@ -276,6 +384,7 @@ export default function PacientesCeaf() {
                   <th>Município</th>
                   <th>Vigência</th>
                   <th>Situação</th>
+                  <th>Conversão</th>
                   <th>Ações</th>
                 </tr>
               </thead>
@@ -300,9 +409,21 @@ export default function PacientesCeaf() {
                       </td>
                       <td>{paciente.situacao_lme || "-"}</td>
                       <td>
-                        <button className="secondary-button" onClick={() => abrirDetalhe(paciente)}>
-                          Detalhes
-                        </button>
+                        {paciente.paciente_clinico_id ? (
+                          <span className="badge badge-success">Convertido</span>
+                        ) : (
+                          <span className="badge">Pendente</span>
+                        )}
+                      </td>
+                      <td>
+                        <div className="table-actions">
+                          <button className="secondary-button" onClick={() => abrirDetalhe(paciente)}>
+                            Detalhes
+                          </button>
+                          <button className="primary-button" onClick={() => converterIndividual(paciente)} disabled={convertendo || Boolean(paciente.paciente_clinico_id)}>
+                            Converter
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -337,12 +458,16 @@ export default function PacientesCeaf() {
               <div><strong>Fim da vigência</strong><span>{formatarData(detalhe.paciente.data_fim_vigencia)}</span></div>
               <div><strong>Situação LME</strong><span>{detalhe.paciente.situacao_lme || "-"}</span></div>
               <div><strong>Lote de importação</strong><span>{detalhe.paciente.lote_importacao || "-"}</span></div>
+              <div><strong>Paciente clínico</strong><span>{detalhe.paciente.paciente_clinico_id || "Não convertido"}</span></div>
+              <div><strong>Paciente agenda</strong><span>{detalhe.paciente.paciente_agenda_id || "Não vinculado"}</span></div>
             </div>
           )}
 
-          <p className="helper-text">
-            A conversão para paciente clínico será habilitada na próxima etapa, após validação da deduplicação entre CEAF, pacientes clínicos e prontuário longitudinal.
-          </p>
+          <div className="action-buttons">
+            <button className="primary-button" onClick={() => converterIndividual(detalhe.paciente)} disabled={convertendo || Boolean(detalhe.paciente.paciente_clinico_id)}>
+              {detalhe.paciente.paciente_clinico_id ? "Já convertido" : "Converter para paciente clínico"}
+            </button>
+          </div>
         </div>
       )}
     </div>
