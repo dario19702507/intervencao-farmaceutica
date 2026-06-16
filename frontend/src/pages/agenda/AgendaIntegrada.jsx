@@ -8,10 +8,11 @@ export default function AgendaIntegrada() {
   const [loading, setLoading] = useState(false);
   const [filtroServico, setFiltroServico] = useState("todos");
   const [filtroStatus, setFiltroStatus] = useState("ativos");
+  const [filtroPacienteAgenda, setFiltroPacienteAgenda] = useState("");
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [capacidadeDia, setCapacidadeDia] = useState(null);
   const [sugestoesDatas, setSugestoesDatas] = useState([]);
-  const [periodoAgenda, setPeriodoAgenda] = useState("30");
+  const [periodoAgenda, setPeriodoAgenda] = useState("7");
   const [notificacoes, setNotificacoes] = useState(null);
   const [filtroAlerta, setFiltroAlerta] = useState("");
   const [mostrarNotificacoes, setMostrarNotificacoes] = useState(false);
@@ -87,6 +88,89 @@ export default function AgendaIntegrada() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [periodoAgenda]);
 
+  function eventoCorrespondeAoPaciente(evento, termo) {
+    const termoNormalizado = normalizarTexto(termo);
+
+    if (!termoNormalizado) {
+      return true;
+    }
+
+    const camposBusca = [
+      evento.paciente_nome,
+      evento.nome_paciente,
+      evento.cpf,
+      evento.cns,
+      evento.telefone,
+      evento.medicamento,
+      evento.situacao_laudo,
+    ]
+      .map((valor) => normalizarTexto(valor))
+      .filter(Boolean);
+
+    return camposBusca.some((valor) => valor.includes(termoNormalizado));
+  }
+
+  const eventosFiltrados = useMemo(() => {
+    return eventos.filter((evento) => {
+      const status = normalizarTexto(evento.status);
+      const servicoOk = categoriaOk(evento, filtroServico);
+
+      const statusOk =
+        filtroStatus === "todos" ||
+        (filtroStatus === "ativos" && ehAtivoOperacional(evento)) ||
+        status === filtroStatus;
+
+      if (!servicoOk || !statusOk) {
+        return false;
+      }
+
+      if (!eventoCorrespondeAoPaciente(evento, filtroPacienteAgenda)) {
+        return false;
+      }
+
+      if (filtroAlerta === "dispensacoes_amanha") {
+        const amanha = new Date();
+        amanha.setDate(amanha.getDate() + 1);
+        const dataAmanha = amanha.toISOString().split("T")[0];
+
+        return (
+          ehRetirada(evento) &&
+          ["agendado", "notificado"].includes(status) &&
+          evento.data_evento === dataAmanha
+        );
+      }
+
+      if (filtroAlerta === "dispensacoes_atrasadas") {
+        const hojeLocal = new Date();
+        hojeLocal.setHours(0, 0, 0, 0);
+        const dataEvento = evento.data_evento
+          ? new Date(evento.data_evento + "T00:00:00")
+          : null;
+
+        return (
+          ehRetirada(evento) &&
+          ["agendado", "notificado", "retirada_prevista"].includes(status) &&
+          dataEvento &&
+          dataEvento < hojeLocal
+        );
+      }
+
+      if (filtroAlerta === "renovacao_urgente") {
+        return ehRenovacao(evento) && ["agendado", "notificado", "renovacao_urgente"].includes(status);
+      }
+
+      if (filtroAlerta === "renovacao_recomendada") {
+        return ehRenovacao(evento) && ["agendado", "notificado", "renovacao_recomendada"].includes(status);
+      }
+
+      if (filtroAlerta) {
+        return status === filtroAlerta;
+      }
+
+      return true;
+    });
+  }, [eventos, filtroServico, filtroStatus, filtroAlerta, filtroPacienteAgenda]);
+
   const hoje = new Date().toISOString().slice(0, 10);
 
   const statusEncerradosAgenda = ["cancelado", "reagendado", "realizado", "concluido"];
@@ -141,63 +225,6 @@ export default function AgendaIntegrada() {
     novoEvento.tipo_evento === "retirada_medicamento" &&
     laudoVencido(novoEvento.data_fim_vigencia);
 
-  const eventosFiltrados = useMemo(() => {
-    return eventos.filter((evento) => {
-      const status = normalizarTexto(evento.status);
-      const servicoOk = categoriaOk(evento, filtroServico);
-
-      const statusOk =
-        filtroStatus === "todos" ||
-        (filtroStatus === "ativos" && ehAtivoOperacional(evento)) ||
-        status === filtroStatus;
-
-      if (!servicoOk || !statusOk) {
-        return false;
-      }
-
-      if (filtroAlerta === "dispensacoes_amanha") {
-        const amanha = new Date();
-        amanha.setDate(amanha.getDate() + 1);
-        const dataAmanha = amanha.toISOString().split("T")[0];
-
-        return (
-          ehRetirada(evento) &&
-          ["agendado", "notificado"].includes(status) &&
-          evento.data_evento === dataAmanha
-        );
-      }
-
-      if (filtroAlerta === "dispensacoes_atrasadas") {
-        const hojeLocal = new Date();
-        hojeLocal.setHours(0, 0, 0, 0);
-        const dataEvento = evento.data_evento
-          ? new Date(evento.data_evento + "T00:00:00")
-          : null;
-
-        return (
-          ehRetirada(evento) &&
-          ["agendado", "notificado", "retirada_prevista"].includes(status) &&
-          dataEvento &&
-          dataEvento < hojeLocal
-        );
-      }
-
-      if (filtroAlerta === "renovacao_urgente") {
-        return ehRenovacao(evento) && ["agendado", "notificado", "renovacao_urgente"].includes(status);
-      }
-
-      if (filtroAlerta === "renovacao_recomendada") {
-        return ehRenovacao(evento) && ["agendado", "notificado", "renovacao_recomendada"].includes(status);
-      }
-
-      if (filtroAlerta) {
-        return status === filtroAlerta;
-      }
-
-      return true;
-    });
-  }, [eventos, filtroServico, filtroStatus, filtroAlerta]);
-
   const resumoOperacional = useMemo(() => {
     const eventosAtivos = eventos.filter(ehAtivoOperacional);
     const eventosConfirmados = eventosAtivos.filter((evento) => {
@@ -226,6 +253,13 @@ export default function AgendaIntegrada() {
       realizados: eventos.filter((e) => ["realizado", "concluido"].includes(normalizarTexto(e.status))).length,
     };
   }, [eventos, hoje]);
+
+  const limiteExibicaoAgenda = 150;
+  const eventosExibidos = useMemo(
+    () => eventosFiltrados.slice(0, limiteExibicaoAgenda),
+    [eventosFiltrados]
+  );
+  const totalOcultoPorLimite = Math.max(eventosFiltrados.length - eventosExibidos.length, 0);
 
   async function buscarPacientesAgenda(termo) {
     setBuscaPaciente(termo);
@@ -955,6 +989,15 @@ export default function AgendaIntegrada() {
 
         <div className="filters-row">
           <label>
+            Localizar paciente
+            <input
+              value={filtroPacienteAgenda}
+              onChange={(e) => setFiltroPacienteAgenda(e.target.value)}
+              placeholder="Nome, CPF, CNS, telefone ou medicamento"
+            />
+          </label>
+
+          <label>
             Categoria
             <select
               value={filtroServico}
@@ -1024,6 +1067,15 @@ export default function AgendaIntegrada() {
                 onClick={() => setFiltroAlerta("")}
               >
                 Limpar filtro de alerta
+              </button>
+            )}
+
+            {filtroPacienteAgenda && (
+              <button
+                className="secondary-button"
+                onClick={() => setFiltroPacienteAgenda("")}
+              >
+                Limpar paciente
               </button>
             )}
           </div>
@@ -1127,6 +1179,12 @@ export default function AgendaIntegrada() {
         ) : eventosFiltrados.length === 0 ? (
           <p className="muted">Nenhum compromisso encontrado.</p>
         ) : (
+          <>
+            {totalOcultoPorLimite > 0 && (
+              <div className="clinical-summary warning">
+                Exibindo os primeiros {limiteExibicaoAgenda} compromissos de {eventosFiltrados.length}. Use o filtro por paciente, status ou período para refinar a lista.
+              </div>
+            )}
           <div className="table-wrapper">
             <table className="agenda-table">
               <thead>
@@ -1144,7 +1202,7 @@ export default function AgendaIntegrada() {
               </thead>
 
               <tbody>
-                {eventosFiltrados.map((evento) => (
+                {eventosExibidos.map((evento) => (
                   <tr key={evento.id} className={classeLinhaAgenda(evento.status)}>
                     <td>
                       {evento.data_evento
@@ -1212,6 +1270,7 @@ export default function AgendaIntegrada() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </div>
