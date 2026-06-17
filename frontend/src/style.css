@@ -2408,71 +2408,42 @@ button {
   color: #1d4ed8;
 }
 
-/* 15D.5 - Conciliação Mensal CEAF */
-.conciliacao-ceaf-page .inline-checkbox {
-  align-self: end;
-  min-height: 42px;
+/* 15D.6 — Alertas CEAF na visão geral e notificações */
+.agenda-alertas-priorizados .alert-card {
+  border-left-width: 6px;
 }
 
-.conciliacao-resultado {
-  border-left: 4px solid #2563eb;
+.compact-tags {
+  gap: 0.35rem;
+  flex-wrap: wrap;
 }
 
-.dashboard-grid.two {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
+.ceaf-notificacoes-panel {
+  border: 1px solid rgba(15, 23, 42, 0.08);
 }
 
-.compact-card {
-  margin: 0;
-  box-shadow: none;
+.compact-grid {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
 }
 
-.compact-list {
-  list-style: none;
-  display: grid;
-  gap: 0.65rem;
-  padding: 0;
-  margin: 0;
+.badge-info,
+.badge.info,
+.alert-info .badge {
+  background: #e0f2fe;
+  color: #075985;
 }
 
-.compact-list li {
-  display: grid;
-  gap: 0.25rem;
-  padding: 0.75rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.85rem;
-  background: #f8fafc;
+.alert-card.alert-danger,
+.alert-card.alert-critico {
+  border-left-color: #dc2626;
 }
 
-.compact-list li strong {
-  color: #0f172a;
+.alert-card.alert-warning,
+.alert-card.alert-atencao {
+  border-left-color: #d97706;
 }
 
-.compact-list li span {
-  color: #64748b;
-  font-size: 0.9rem;
-}
-
-@media (max-width: 900px) {
-  .dashboard-grid.two {
-    grid-template-columns: 1fr;
-  }
-}
-
-.cards-grid.six {
-  grid-template-columns: repeat(6, minmax(130px, 1fr));
-}
-
-@media (max-width: 1200px) {
-  .cards-grid.six {
-    grid-template-columns: repeat(3, minmax(160px, 1fr));
-  }
-}
-
-@media (max-width: 700px) {
-  .cards-grid.six {
-    grid-template-columns: 1fr;
-  }
+.alert-card.alert-info,
+.alert-card.alert-informativo {
+  border-left-color: #0284c7;
 }

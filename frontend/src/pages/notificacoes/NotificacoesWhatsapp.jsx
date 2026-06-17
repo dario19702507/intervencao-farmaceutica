@@ -37,6 +37,8 @@ export default function NotificacoesWhatsapp() {
   const [dashboardNotificacoes, setDashboardNotificacoes] = useState(null);
   const [dashboardWhatsapp, setDashboardWhatsapp] = useState(null);
   const [notificacoes, setNotificacoes] = useState([]);
+  const [notificacoesCeaf, setNotificacoesCeaf] = useState([]);
+  const [resumoCeaf, setResumoCeaf] = useState(null);
   const [fila, setFila] = useState([]);
   const [opcoesNotif, setOpcoesNotif] = useState({ tipos: [], prioridades: [], origens: [] });
   const [opcoesZap, setOpcoesZap] = useState({ status: [], provedores: [], origens: [] });
@@ -58,9 +60,10 @@ export default function NotificacoesWhatsapp() {
       });
       const paramsZap = limparParams(filtrosZap);
 
-      const [dashNotif, listaNotif, dashZap, filaZap, opNotif, opZap] = await Promise.all([
+      const [dashNotif, listaNotif, ceafPendentes, dashZap, filaZap, opNotif, opZap] = await Promise.all([
         api.get("/consultorio/notificacoes/dashboard"),
         api.get("/consultorio/notificacoes", { params: paramsNotif }),
+        api.get("/consultorio/agenda/notificacoes-pendentes-ceaf", { params: { limite: 200 } }),
         api.get("/consultorio/whatsapp/dashboard"),
         api.get("/consultorio/whatsapp/fila", { params: paramsZap }),
         api.get("/consultorio/notificacoes/opcoes"),
@@ -69,6 +72,8 @@ export default function NotificacoesWhatsapp() {
 
       setDashboardNotificacoes(dashNotif.data || null);
       setNotificacoes(listaNotif.data?.notificacoes || []);
+      setNotificacoesCeaf(ceafPendentes.data?.notificacoes || []);
+      setResumoCeaf(ceafPendentes.data?.resumo_alertas || ceafPendentes.data?.resumo || null);
       setDashboardWhatsapp(dashZap.data || null);
       setFila(filaZap.data?.envios || []);
       setOpcoesNotif(opNotif.data || { tipos: [], prioridades: [], origens: [] });
@@ -94,6 +99,21 @@ export default function NotificacoesWhatsapp() {
     } catch (e) {
       console.error(e);
       setErro("Erro ao gerar notificações automáticas.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function gerarNotificacoesCeaf() {
+    try {
+      setLoading(true);
+      const resp = await api.get("/consultorio/agenda/notificacoes-pendentes-ceaf", { params: { limite: 300 } });
+      setNotificacoesCeaf(resp.data?.notificacoes || []);
+      setResumoCeaf(resp.data?.resumo_alertas || resp.data?.resumo || null);
+      setMensagem("Notificações CEAF atualizadas para preparação de contato.");
+    } catch (e) {
+      console.error(e);
+      setErro("Erro ao atualizar notificações CEAF.");
     } finally {
       setLoading(false);
     }
@@ -178,6 +198,17 @@ export default function NotificacoesWhatsapp() {
     ];
   }, [dashboardNotificacoes]);
 
+  const cardsCeaf = useMemo(() => {
+    const d = resumoCeaf || {};
+    return [
+      ["CEAF pendentes", notificacoesCeaf.length],
+      ["Críticos", d.critico ?? d.criticos ?? 0],
+      ["Urgentes", d.urgente ?? d.urgentes ?? 0],
+      ["Atenção", d.atencao ?? d.atencao_total ?? 0],
+      ["Informativos", d.informativo ?? d.informativos ?? 0],
+    ];
+  }, [resumoCeaf, notificacoesCeaf]);
+
   const cardsWhatsapp = useMemo(() => {
     const d = dashboardWhatsapp || {};
     return [
@@ -213,6 +244,7 @@ export default function NotificacoesWhatsapp() {
 
       <section className="actions-row">
         <button onClick={gerarAutomaticas}>Gerar notificações automáticas</button>
+        <button onClick={gerarNotificacoesCeaf}>Atualizar notificações CEAF</button>
         <button onClick={marcarTodasLidas}>Marcar todas como lidas</button>
         <button onClick={enfileirarNotificacoes}>Enfileirar notificações no WhatsApp</button>
         <button onClick={simularEnvio}>Simular envios pendentes</button>
@@ -272,6 +304,54 @@ export default function NotificacoesWhatsapp() {
                 </tr>
               ))}
               {notificacoes.length === 0 && <tr><td colSpan="8">Nenhuma notificação encontrada.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+
+      <section className="panel ceaf-notificacoes-panel">
+        <div className="panel-title">
+          <div>
+            <h2>Preparação CEAF para contato</h2>
+            <p className="muted">Alertas CEAF convertidos em notificações operacionais para posterior WhatsApp. Nenhum envio automático é realizado nesta etapa.</p>
+          </div>
+          <button onClick={gerarNotificacoesCeaf} disabled={loading}>Atualizar CEAF</button>
+        </div>
+
+        <section className="grid-cards compact-grid">
+          {cardsCeaf.map(([label, valor]) => (
+            <div className="metric-card" key={label}>
+              <span>{label}</span>
+              <strong>{valor}</strong>
+            </div>
+          ))}
+        </section>
+
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Prioridade</th>
+                <th>Paciente</th>
+                <th>Telefone</th>
+                <th>Medicamento</th>
+                <th>Motivo</th>
+                <th>Mensagem sugerida</th>
+              </tr>
+            </thead>
+            <tbody>
+              {notificacoesCeaf.map((n, idx) => (
+                <tr key={`${n.paciente_ceaf_id || n.telefone || idx}-${n.tipo || n.motivo}`}>
+                  <td><span className={prioridadeClasse[n.prioridade] || prioridadeClasse[String(n.prioridade || "").toUpperCase()] || "badge"}>{n.prioridade || "-"}</span></td>
+                  <td>{n.paciente_nome || n.nome || "-"}</td>
+                  <td>{n.telefone || "-"}</td>
+                  <td>{n.medicamento || "-"}</td>
+                  <td>{n.motivo || n.tipo || n.titulo || "-"}</td>
+                  <td>{n.mensagem || n.mensagem_sugerida || "-"}</td>
+                </tr>
+              ))}
+              {notificacoesCeaf.length === 0 && <tr><td colSpan="6">Nenhuma notificação CEAF pendente encontrada.</td></tr>}
             </tbody>
           </table>
         </div>
