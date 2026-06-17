@@ -2,6 +2,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from models.consultorio_models import (
     PacienteSimplificado,
@@ -169,11 +170,74 @@ def atualizar_dados_clinicos_paciente(
 
 @router.get("/pacientes-clinicos")
 def listar_pacientes_clinicos(
+    limit: int = 50,
+    offset: int = 0,
     db: Session = Depends(get_db_consultorio)
 ):
-    pacientes = db.query(PacienteClinico).order_by(
+    """Listagem paginada de pacientes clínicos.
+
+    Mantida por compatibilidade com telas antigas, mas sem carregar a base
+    inteira por padrão. Para uso operacional no consultório, prefira
+    /pacientes-clinicos/buscar.
+    """
+    limit = max(1, min(limit, 100))
+    offset = max(0, offset)
+
+    query = db.query(PacienteClinico)
+    total = query.count()
+    pacientes = query.order_by(
         PacienteClinico.criado_em.desc()
-    ).all()
+    ).offset(offset).limit(limit).all()
+
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "pacientes": pacientes
+    }
+
+
+@router.get("/pacientes-clinicos/buscar")
+def buscar_pacientes_clinicos_direto(
+    termo: str,
+    limit: int = 30,
+    db: Session = Depends(get_db_consultorio)
+):
+    """Busca direta para abrir prontuário no Consultório.
+
+    Pesquisa por nome, CPF, CNS, telefone, bairro e nome da mãe, retornando
+    poucos resultados para evitar carregar toda a lista de pacientes.
+    """
+    termo_limpo = (termo or "").strip()
+    if len(termo_limpo) < 3:
+        return {"total": 0, "pacientes": []}
+
+    limit = max(1, min(limit, 50))
+    like = f"%{termo_limpo}%"
+    somente_digitos = "".join(ch for ch in termo_limpo if ch.isdigit())
+
+    filtros = [
+        PacienteClinico.nome.ilike(like),
+        PacienteClinico.cpf.ilike(like),
+        PacienteClinico.cns.ilike(like),
+        PacienteClinico.telefone.ilike(like),
+        PacienteClinico.bairro.ilike(like),
+        PacienteClinico.nome_mae.ilike(like),
+    ]
+
+    if somente_digitos and somente_digitos != termo_limpo:
+        like_digitos = f"%{somente_digitos}%"
+        filtros.extend([
+            PacienteClinico.cpf.ilike(like_digitos),
+            PacienteClinico.cns.ilike(like_digitos),
+            PacienteClinico.telefone.ilike(like_digitos),
+        ])
+
+    pacientes = db.query(PacienteClinico).filter(
+        or_(*filtros)
+    ).order_by(
+        PacienteClinico.nome.asc()
+    ).limit(limit).all()
 
     return {
         "total": len(pacientes),

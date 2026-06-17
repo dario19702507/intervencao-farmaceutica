@@ -9,8 +9,10 @@ export default function Consultorio({ usuario }) {
   const [detalhe, setDetalhe] = useState(null);
   const [resumoCuidado, setResumoCuidado] = useState(null);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [loadingProntuario, setLoadingProntuario] = useState(false);
+  const [buscaPacienteProntuario, setBuscaPacienteProntuario] = useState("");
+  const [buscaPacientesRealizada, setBuscaPacientesRealizada] = useState(false);
 
   const [linhaTempoClinica, setLinhaTempoClinica] = useState([]);
   const [medicamentos, setMedicamentos] = useState([]);
@@ -233,12 +235,29 @@ export default function Consultorio({ usuario }) {
   const [buscaCatalogoMedicamentoSubstituto, setBuscaCatalogoMedicamentoSubstituto] = useState("");
 
   useEffect(() => {
-    carregarPacientes();
     carregarOpcoesFarmacoterapia();
     carregarOpcoesMetas();
     carregarOpcoesPlanoCuidado();
     carregarOpcoesCicloVidaMedicamento();
   }, []);
+
+  useEffect(() => {
+    if (abaConsultorio !== "pacientes") return;
+
+    const termo = buscaPacienteProntuario.trim();
+    if (termo.length < 3) {
+      setPacientes([]);
+      setBuscaPacientesRealizada(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      buscarPacientesProntuario(termo);
+    }, 450);
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buscaPacienteProntuario, abaConsultorio]);
 
   useEffect(() => {
     if (mostrarFormularioMedicamento) {
@@ -723,14 +742,26 @@ export default function Consultorio({ usuario }) {
     return "";
   }
 
-  async function carregarPacientes() {
+  async function buscarPacientesProntuario(termoBusca = buscaPacienteProntuario) {
+    const termo = String(termoBusca || "").trim();
+
+    if (termo.length < 3) {
+      setPacientes([]);
+      setBuscaPacientesRealizada(false);
+      return;
+    }
+
     try {
       setLoading(true);
-      const response = await api.get("/consultorio/pacientes-clinicos");
+      setBuscaPacientesRealizada(true);
+      const response = await api.get("/consultorio/pacientes-clinicos/buscar", {
+        params: { termo, limit: 30 },
+      });
       setPacientes(response.data.pacientes || []);
     } catch (error) {
-      console.error("Erro ao carregar pacientes:", error.response?.data || error);
-      alert("Erro ao carregar pacientes.");
+      console.error("Erro ao buscar pacientes:", error.response?.data || error);
+      alert("Erro ao buscar pacientes.");
+      setPacientes([]);
     } finally {
       setLoading(false);
     }
@@ -3789,17 +3820,63 @@ async function concluirPlanoCuidado(plano) {
       {abaConsultorio === "centro" && <CuidadoFarmaceutico />}
 
       {abaConsultorio === "pacientes" && (
-        loading ? (
-          <p>Carregando pacientes...</p>
-        ) : (
-          <div className="table-card">
+        <div className="table-card">
+          <div className="section-header">
+            <div>
+              <h3>Pacientes e Prontuários</h3>
+              <p className="muted">
+                Busque diretamente por nome, CPF, CNS ou telefone para abrir o prontuário. A lista completa não é carregada automaticamente para manter a tela mais rápida.
+              </p>
+            </div>
+          </div>
+
+          <div className="filters-row">
+            <label className="full-width-label">
+              Buscar paciente
+              <input
+                value={buscaPacienteProntuario}
+                onChange={(e) => setBuscaPacienteProntuario(e.target.value)}
+                placeholder="Digite nome, CPF, CNS ou telefone"
+              />
+            </label>
+
+            <div className="action-buttons">
+              <button
+                className="primary-button"
+                onClick={() => buscarPacientesProntuario()}
+                disabled={loading || buscaPacienteProntuario.trim().length < 3}
+              >
+                Buscar
+              </button>
+              <button
+                className="secondary-button"
+                onClick={() => {
+                  setBuscaPacienteProntuario("");
+                  setPacientes([]);
+                  setBuscaPacientesRealizada(false);
+                }}
+              >
+                Limpar
+              </button>
+            </div>
+          </div>
+
+          {loading ? (
+            <p className="muted">Buscando pacientes...</p>
+          ) : buscaPacienteProntuario.trim().length < 3 ? (
+            <p className="muted table-empty">Digite pelo menos 3 caracteres para iniciar a busca.</p>
+          ) : pacientes.length === 0 && buscaPacientesRealizada ? (
+            <p className="muted table-empty">Nenhum paciente encontrado para o termo informado.</p>
+          ) : pacientes.length > 0 ? (
             <table className="data-table">
               <thead>
                 <tr>
                   <th>Nome</th>
-                  <th>Idade</th>
-                  <th>Sexo</th>
+                  <th>CPF</th>
+                  <th>CNS</th>
+                  <th>Telefone</th>
                   <th>Bairro</th>
+                  <th>Origem</th>
                   <th>Ação</th>
                 </tr>
               </thead>
@@ -3808,9 +3885,11 @@ async function concluirPlanoCuidado(plano) {
                 {pacientes.map((p) => (
                   <tr key={p.id}>
                     <td>{p.nome}</td>
-                    <td>{p.idade || "—"}</td>
-                    <td>{p.sexo || "—"}</td>
+                    <td>{p.cpf || "—"}</td>
+                    <td>{p.cns || "—"}</td>
+                    <td>{p.telefone || "—"}</td>
                     <td>{p.bairro || "—"}</td>
+                    <td>{p.origem || "—"}</td>
                     <td>
                       <button className="primary-button" onClick={() => abrirProntuario(p)}>
                         Abrir prontuário
@@ -3820,12 +3899,8 @@ async function concluirPlanoCuidado(plano) {
                 ))}
               </tbody>
             </table>
-
-            {pacientes.length === 0 && (
-              <p className="muted table-empty">Nenhum paciente encontrado.</p>
-            )}
-          </div>
-        )
+          ) : null}
+        </div>
       )}
     </div>
   );
