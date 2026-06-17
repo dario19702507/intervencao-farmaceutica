@@ -40,20 +40,28 @@ export default function CuidadoFarmaceutico() {
     setLoading(true);
     setErro("");
     try {
-      const [opcoesResp, dashboardResp, pendenciasResp] = await Promise.all([
+      const [opcoesResp, dashboardResp, pendenciasResp] = await Promise.allSettled([
         api.get("/consultorio/atencao-farmaceutica/opcoes"),
         api.get("/consultorio/atencao-farmaceutica/dashboard"),
         api.get("/consultorio/atencao-farmaceutica/pendencias", {
           params: {
             criticidade: filtroCriticidade || undefined,
             categoria: filtroCategoria || undefined,
-            limite: 200,
+            limite: 80,
+            limite_pacientes: 80,
           },
         }),
       ]);
-      setOpcoes(opcoesResp.data);
-      setDashboard(dashboardResp.data);
-      setPendencias(pendenciasResp.data?.pendencias || []);
+
+      if (opcoesResp.status === "fulfilled") setOpcoes(opcoesResp.value.data);
+      if (dashboardResp.status === "fulfilled") setDashboard(dashboardResp.value.data);
+      if (pendenciasResp.status === "fulfilled") setPendencias(pendenciasResp.value.data?.pendencias || []);
+
+      const falhas = [opcoesResp, dashboardResp, pendenciasResp].filter((item) => item.status === "rejected");
+      if (falhas.length) {
+        console.warn("Centro de Atenção Farmacêutica carregado parcialmente.", falhas);
+        setErro("Alguns indicadores não puderam ser carregados agora. O restante do consultório permanece disponível.");
+      }
     } catch (e) {
       console.error(e);
       setErro("Não foi possível carregar o Centro de Atenção Farmacêutica.");

@@ -768,8 +768,15 @@ export default function Consultorio({ usuario }) {
   }
 
   async function carregarMedicamentos(pacienteId) {
-    const response = await api.get(`/consultorio/paciente-clinico/${pacienteId}/medicamentos`);
-    setMedicamentos(response.data || []);
+    try {
+      const response = await api.get(`/consultorio/paciente-clinico/${pacienteId}/medicamentos`);
+      setMedicamentos(response.data || []);
+      return response.data || [];
+    } catch (error) {
+      console.warn("Medicamentos indisponíveis no momento.", error.response?.data || error);
+      setMedicamentos([]);
+      return [];
+    }
   }
 
 
@@ -816,11 +823,18 @@ export default function Consultorio({ usuario }) {
       return;
     }
 
-    await carregarMedicamentos(pacienteId);
-    await carregarIntervencoes(pacienteId);
-    await carregarLinhaTempo(pacienteId);
-    await carregarAvaliacaoPolifarmacia(pacienteId);
-    await carregarEvolucaoFarmacoterapeutica(pacienteId);
+    const resultados = await Promise.allSettled([
+      carregarMedicamentos(pacienteId),
+      carregarIntervencoes(pacienteId),
+      carregarLinhaTempo(pacienteId),
+      carregarAvaliacaoPolifarmacia(pacienteId),
+      carregarEvolucaoFarmacoterapeutica(pacienteId),
+    ]);
+
+    const falhas = resultados.filter((item) => item.status === "rejected");
+    if (falhas.length) {
+      console.warn("Prontuário carregado parcialmente.", falhas);
+    }
   }
 
   async function abrirProntuario(paciente) {

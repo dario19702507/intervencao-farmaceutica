@@ -480,27 +480,45 @@ def listar_pendencias(
     criticidade: str | None = None,
     categoria: str | None = None,
     paciente_id: int | None = None,
-    limite: int = 200,
+    limite: int = 100,
+    limite_pacientes: int = 80,
 ) -> list[dict]:
+    """Lista pendências com limite real de pacientes.
+
+    A versão anterior percorria todos os pacientes clínicos e, para cada um,
+    executava várias consultas. Em produção/Supabase isso torna a aba de
+    consultório muito lenta e pode fazer o navegador acusar CORS quando a
+    requisição falha antes de retornar resposta útil.
+    """
+    limite = max(1, min(int(limite or 100), 300))
+    limite_pacientes = max(1, min(int(limite_pacientes or 80), 300))
+
     pacientes_query = db.query(PacienteClinico).order_by(PacienteClinico.nome.asc())
     if paciente_id:
         pacientes_query = pacientes_query.filter(PacienteClinico.id == paciente_id)
-    pacientes = pacientes_query.all()
+
+    pacientes = pacientes_query.limit(limite_pacientes).all()
 
     todas: list[dict] = []
     for paciente in pacientes:
-        todas.extend(gerar_pendencias_paciente(paciente.id, db))
+        try:
+            todas.extend(gerar_pendencias_paciente(paciente.id, db))
+        except Exception:
+            # Uma falha pontual em um paciente não deve derrubar a central.
+            continue
+        if len(todas) >= limite * 3:
+            break
 
     if criticidade:
         todas = [p for p in todas if p["criticidade"] == criticidade.upper()]
     if categoria:
         todas = [p for p in todas if p["categoria"] == categoria.upper()]
 
-    return todas[: max(1, min(int(limite or 200), 1000))]
+    return todas[:limite]
 
 
 def montar_dashboard_atencao(db: Session) -> dict:
-    pendencias = listar_pendencias(db, limite=1000)
+    pendencias = listar_pendencias(db, limite=200, limite_pacientes=80)
     por_criticidade = Counter(p["criticidade"] for p in pendencias)
     por_categoria = Counter(p["categoria"] for p in pendencias)
     por_tipo = Counter(p["tipo"] for p in pendencias)
