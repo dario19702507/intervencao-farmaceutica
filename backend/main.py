@@ -46,6 +46,7 @@ from routers.dashboard_notificacoes import router as dashboard_notificacoes_rout
 from routers.farmacoterapia import router as farmacoterapia_router
 from routers.indicadores_cientificos import router as indicadores_cientificos_router
 from routers.ceaf import router as ceaf_router
+from routers.medicamentos import router as medicamentos_router
 from database import SessionLocal, get_db
 from auth import ALGORITHM, SECRET_KEY, create_access_token, hash_password, oauth2_scheme, verify_password
 from permissions import exigir_admin as perm_exigir_admin, exigir_pode_escrever, usuario_eh_leitura_restrita, validar_perfil_usuario, obter_perfil
@@ -91,6 +92,7 @@ app.include_router(dashboard_notificacoes_router)
 app.include_router(farmacoterapia_router)
 app.include_router(indicadores_cientificos_router)
 app.include_router(ceaf_router)
+app.include_router(medicamentos_router)
 app.include_router(consultorio_router)
 
 
