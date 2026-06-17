@@ -1,6 +1,7 @@
 from datetime import datetime, date, timedelta
 from typing import Optional
 
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from models.consultorio_models import (
@@ -151,9 +152,10 @@ def criar_proxima_dispensacao_automatica(
     atendimento anterior, preservando o limite de 30 dias.
     """
     servico_normalizado = (agenda_atual.servico_origem or "").strip().lower()
-    tipo_normalizado = (agenda_atual.tipo_evento or "").strip().upper()
+    tipo_normalizado = (agenda_atual.tipo_evento or "").strip().lower()
+    tipos_retirada = {"retirada", "retirada_medicamento", "retirada_prevista", "dispensacao"}
 
-    if servico_normalizado not in ["dispensacao", "dispensação", "agenda"] and tipo_normalizado != "RETIRADA":
+    if servico_normalizado not in ["dispensacao", "dispensação", "agenda", "ceaf"] and tipo_normalizado not in tipos_retirada:
         return None
 
     if not agenda_atual.data_evento:
@@ -181,6 +183,8 @@ def criar_proxima_dispensacao_automatica(
             tipo_evento="RENOVACAO",
             prioridade="URGENTE",
             paciente_id=agenda_atual.paciente_id,
+            paciente_ceaf_id=getattr(agenda_atual, "paciente_ceaf_id", None),
+            paciente_clinico_id=getattr(agenda_atual, "paciente_clinico_id", None),
             paciente_nome=agenda_atual.paciente_nome,
             telefone=agenda_atual.telefone,
             medicamento_id=getattr(agenda_atual, "medicamento_id", None),
@@ -205,16 +209,24 @@ def criar_proxima_dispensacao_automatica(
         alerta._origem_automacao = "risco_interrupcao"
         return alerta
 
+    filtros_paciente = []
+    if agenda_atual.paciente_id:
+        filtros_paciente.append(AgendaIntegrada.paciente_id == agenda_atual.paciente_id)
+    if getattr(agenda_atual, "paciente_ceaf_id", None):
+        filtros_paciente.append(AgendaIntegrada.paciente_ceaf_id == agenda_atual.paciente_ceaf_id)
+    if getattr(agenda_atual, "paciente_clinico_id", None):
+        filtros_paciente.append(AgendaIntegrada.paciente_clinico_id == agenda_atual.paciente_clinico_id)
+
     query_existente = db.query(AgendaIntegrada).filter(
         AgendaIntegrada.id != agenda_atual.id,
-        AgendaIntegrada.tipo_evento == "RETIRADA",
+        func.lower(AgendaIntegrada.tipo_evento).in_(tipos_retirada),
         AgendaIntegrada.medicamento == agenda_atual.medicamento,
-        AgendaIntegrada.status.in_(["agendado", "notificado", "reagendado", "AGENDADO"]),
+        func.lower(AgendaIntegrada.status).in_(["agendado", "notificado", "reagendado", "retirada_prevista"]),
         AgendaIntegrada.data_evento >= proxima_data
     )
 
-    if agenda_atual.paciente_id:
-        query_existente = query_existente.filter(AgendaIntegrada.paciente_id == agenda_atual.paciente_id)
+    if filtros_paciente:
+        query_existente = query_existente.filter(or_(*filtros_paciente))
     else:
         query_existente = query_existente.filter(
             AgendaIntegrada.paciente_nome == agenda_atual.paciente_nome,
@@ -229,9 +241,11 @@ def criar_proxima_dispensacao_automatica(
     novo_evento = AgendaIntegrada(
         evento_pai_id=agenda_atual.id,
         servico_origem="dispensacao",
-        tipo_evento="RETIRADA",
+        tipo_evento="retirada_medicamento",
         prioridade="NORMAL",
         paciente_id=agenda_atual.paciente_id,
+        paciente_ceaf_id=getattr(agenda_atual, "paciente_ceaf_id", None),
+        paciente_clinico_id=getattr(agenda_atual, "paciente_clinico_id", None),
         paciente_nome=agenda_atual.paciente_nome,
         telefone=agenda_atual.telefone,
         medicamento_id=getattr(agenda_atual, "medicamento_id", None),
@@ -240,10 +254,10 @@ def criar_proxima_dispensacao_automatica(
         data_inicio_vigencia=agenda_atual.data_inicio_vigencia,
         data_fim_vigencia=agenda_atual.data_fim_vigencia,
         situacao_laudo=agenda_atual.situacao_laudo,
-        status="AGENDADO",
+        status="retirada_prevista",
         notificar_whatsapp=True,
         observacoes=(
-            "Agendamento inteligente gerado após retirada realizada em "
+            "Retirada prevista gerada automaticamente após retirada realizada em "
             f"{agenda_atual.data_evento.strftime('%d/%m/%Y')}. "
             "A data respeita o limite de 30 dias e o funcionamento da Farmácia Escola."
         )
