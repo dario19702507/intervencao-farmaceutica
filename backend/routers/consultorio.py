@@ -264,6 +264,100 @@ def _usuario_atual_identificacao(current) -> str:
 def _telefone_ceaf(paciente: PacienteCEAF) -> Optional[str]:
     return paciente.telefone_celular or paciente.telefone or paciente.telefone_comercial
 
+def _endereco_ceaf_texto(paciente: PacienteCEAF) -> Optional[str]:
+    partes = [
+        paciente.logradouro,
+        paciente.numero_residencia,
+        paciente.complemento_residencia,
+        paciente.municipio,
+    ]
+    texto = ", ".join([str(parte).strip() for parte in partes if parte and str(parte).strip()])
+    return texto or None
+
+
+def _localizar_paciente_mestre_por_ceaf(db: Session, paciente: PacienteCEAF) -> Optional[PacienteAgenda]:
+    """Localiza o cadastro mestre (pacientes_agenda) correspondente ao CEAF.
+
+    Neste sistema, a tabela pacientes_agenda funciona como cadastro mestre
+    operacional da Farmácia Escola: agenda, histórico e edição cadastral devem
+    apontar para ela, independentemente da origem do paciente.
+    """
+    if paciente.paciente_agenda_id:
+        existente = db.query(PacienteAgenda).filter(PacienteAgenda.id == paciente.paciente_agenda_id).first()
+        if existente:
+            return existente
+
+    if paciente.cpf:
+        existente = db.query(PacienteAgenda).filter(PacienteAgenda.cpf == paciente.cpf).first()
+        if existente:
+            return existente
+
+    if paciente.cns:
+        existente = db.query(PacienteAgenda).filter(PacienteAgenda.cns == paciente.cns).first()
+        if existente:
+            return existente
+
+    return None
+
+
+def _garantir_paciente_mestre_ceaf(db: Session, paciente: PacienteCEAF) -> tuple[PacienteAgenda, str]:
+    """Cria/vincula PacienteAgenda para que o CEAF use a agenda comum.
+
+    A conciliação CEAF deve ser apenas uma porta de entrada. Depois do primeiro
+    vínculo, o paciente passa a ser tratado pela agenda única como qualquer
+    outro paciente da Farmácia Escola.
+    """
+    telefone = _telefone_ceaf(paciente)
+    existente = _localizar_paciente_mestre_por_ceaf(db, paciente)
+
+    if existente:
+        if telefone and not existente.telefone:
+            existente.telefone = telefone
+        if paciente.cpf and not existente.cpf:
+            existente.cpf = paciente.cpf
+        if paciente.cns and not existente.cns:
+            existente.cns = paciente.cns
+        if paciente.municipio and not existente.municipio:
+            existente.municipio = paciente.municipio
+        if paciente.logradouro and not existente.logradouro:
+            existente.logradouro = paciente.logradouro
+        if paciente.numero_residencia and not existente.numero_residencia:
+            existente.numero_residencia = paciente.numero_residencia
+        if paciente.complemento_residencia and not existente.complemento_residencia:
+            existente.complemento_residencia = paciente.complemento_residencia
+        if not existente.origem:
+            existente.origem = "ceaf"
+        elif "ceaf" not in str(existente.origem).lower():
+            existente.origem = f"{existente.origem};ceaf"
+        existente.ativo = True
+        existente.atualizado_em = datetime.utcnow()
+        paciente.paciente_agenda_id = existente.id
+        paciente.atualizado_em = datetime.utcnow()
+        db.flush()
+        return existente, "vinculado"
+
+    novo = PacienteAgenda(
+        nome=paciente.nome,
+        cpf=paciente.cpf,
+        cns=paciente.cns,
+        telefone=telefone,
+        telefone_alternativo=paciente.telefone_comercial,
+        municipio=paciente.municipio,
+        logradouro=paciente.logradouro,
+        numero_residencia=paciente.numero_residencia,
+        complemento_residencia=paciente.complemento_residencia,
+        origem="ceaf",
+        ativo=True,
+        criado_em=datetime.utcnow(),
+        atualizado_em=datetime.utcnow(),
+    )
+    db.add(novo)
+    db.flush()
+    paciente.paciente_agenda_id = novo.id
+    paciente.atualizado_em = datetime.utcnow()
+    return novo, "criado"
+
+
 
 def _paciente_ceaf_resumo(paciente: PacienteCEAF) -> dict:
     return {
@@ -428,6 +522,7 @@ def _pendencia_renovacao_ceaf_existente(db: Session, paciente: PacienteCEAF) -> 
 def _criar_pendencia_renovacao_ceaf(db: Session, paciente: PacienteCEAF, data_base: date, usuario: str) -> Optional[AgendaIntegrada]:
     if _pendencia_renovacao_ceaf_existente(db, paciente):
         return None
+    paciente_mestre, _ = _garantir_paciente_mestre_ceaf(db, paciente)
     data_evento = data_base
     if not data_tem_atendimento(data_evento):
         data_evento = ajustar_para_proximo_dia_atendimento(data_evento)
@@ -437,7 +532,7 @@ def _criar_pendencia_renovacao_ceaf(db: Session, paciente: PacienteCEAF, data_ba
         prioridade="URGENTE",
         status="agendado",
         titulo="Pendência de renovação LME - CEAF",
-        paciente_id=paciente.paciente_agenda_id,
+        paciente_id=paciente_mestre.id,
         paciente_ceaf_id=paciente.id,
         paciente_clinico_id=paciente.paciente_clinico_id,
         paciente_nome=paciente.nome,
@@ -1129,11 +1224,20 @@ def listar_agenda(
 
     if paciente and paciente.strip():
         termo = f"%{paciente.strip().lower()}%"
+        pacientes_mestre_ids = db.query(PacienteAgenda.id).filter(
+            or_(
+                func.lower(PacienteAgenda.nome).like(termo),
+                func.lower(PacienteAgenda.cpf).like(termo),
+                func.lower(PacienteAgenda.cns).like(termo),
+                func.lower(PacienteAgenda.telefone).like(termo),
+            )
+        ).subquery()
         query = query.filter(or_(
             func.lower(AgendaIntegrada.paciente_nome).like(termo),
             func.lower(AgendaIntegrada.telefone).like(termo),
             func.lower(AgendaIntegrada.medicamento).like(termo),
             func.lower(AgendaIntegrada.situacao_laudo).like(termo),
+            AgendaIntegrada.paciente_id.in_(pacientes_mestre_ids),
         ))
 
     total = query.count()
@@ -1826,6 +1930,60 @@ def resumo_conciliacao_ceaf(
     return _montar_resumo_conciliacao_ceaf(db, inicio_mes, fim_mes)
 
 
+@router.post("/agenda/pacientes-mestre/sincronizar-ceaf")
+def sincronizar_pacientes_mestre_ceaf(
+    apenas_nao_vinculados: bool = True,
+    limite: int = 5000,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio),
+):
+    """Sincroniza pacientes CEAF com o cadastro mestre operacional.
+
+    Não cria prontuário clínico e não altera fluxos assistenciais. Serve para
+    preparar agenda, histórico e edição cadastral a partir de uma identidade
+    única de paciente da Farmácia Escola.
+    """
+    exigir_farmaceutico_ou_admin(current)
+
+    query = db.query(PacienteCEAF).filter(or_(PacienteCEAF.ativo == True, PacienteCEAF.ativo.is_(None)))
+    if apenas_nao_vinculados:
+        query = query.filter(PacienteCEAF.paciente_agenda_id.is_(None))
+
+    pacientes = query.order_by(PacienteCEAF.nome.asc()).limit(max(1, min(limite, 20000))).all()
+
+    criados = 0
+    vinculados = 0
+    ignorados = 0
+    amostra = []
+
+    for paciente in pacientes:
+        if not paciente.nome:
+            ignorados += 1
+            continue
+        paciente_mestre, status = _garantir_paciente_mestre_ceaf(db, paciente)
+        if status == "criado":
+            criados += 1
+        else:
+            vinculados += 1
+        if len(amostra) < 20:
+            amostra.append({
+                "ceaf_id": paciente.id,
+                "paciente_mestre_id": paciente_mestre.id,
+                "nome": paciente.nome,
+                "status": status,
+            })
+
+    db.commit()
+    return {
+        "ok": True,
+        "processados": len(pacientes),
+        "pacientes_mestre_criados": criados,
+        "pacientes_mestre_vinculados": vinculados,
+        "ignorados_sem_nome": ignorados,
+        "amostra": amostra,
+    }
+
+
 @router.post("/agenda/conciliacao-ceaf/sincronizar")
 def sincronizar_retiradas_ceaf(
     ano: Optional[int] = None,
@@ -1903,13 +2061,15 @@ def sincronizar_retiradas_ceaf(
             bloqueadas_lme += 1
             continue
 
+        paciente_mestre, paciente_mestre_status = _garantir_paciente_mestre_ceaf(db, paciente)
+
         agenda = AgendaIntegrada(
-            servico_origem="CEAF",
-            tipo_evento="RETIRADA_MEDICAMENTO",
+            servico_origem="dispensacao",
+            tipo_evento="retirada_medicamento",
             prioridade="NORMAL",
             status="retirada_prevista",
-            titulo="Retirada prevista de medicamento - CEAF",
-            paciente_id=paciente.paciente_agenda_id,
+            titulo="Retirada prevista de medicamento",
+            paciente_id=paciente_mestre.id,
             paciente_ceaf_id=paciente.id,
             paciente_clinico_id=paciente.paciente_clinico_id,
             paciente_nome=paciente.nome,
@@ -1946,6 +2106,8 @@ def sincronizar_retiradas_ceaf(
                 "data_evento": data_prevista,
                 "medicamento": paciente.medicamento_prescrito,
                 "vigencia": paciente.data_fim_vigencia,
+                "paciente_mestre_id": paciente_mestre.id,
+                "paciente_mestre_status": paciente_mestre_status,
             })
 
     db.commit()
