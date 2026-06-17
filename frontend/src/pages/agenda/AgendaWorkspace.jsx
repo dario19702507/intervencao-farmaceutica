@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, BellRing, Pill, AlertTriangle, LayoutDashboard, RefreshCw } from "lucide-react";
 import AgendaAlertas from "./AgendaAlertas.jsx";
 import AgendaIntegrada from "./AgendaIntegrada.jsx";
-import AgendaCatalogo from "./AgendaCatalogo.jsx";
+import CatalogoMedicamentos from "./CatalogoMedicamentos.jsx";
 import ConciliacaoCeaf from "./ConciliacaoCeaf.jsx";
 import NotificacoesWhatsapp from "../notificacoes/NotificacoesWhatsapp.jsx";
 import "./AgendaWorkspace.css";
@@ -42,7 +42,7 @@ const TABS = [
     key: "catalogo",
     label: "Catálogo",
     icon: Pill,
-    description: "Medicamentos, apresentações e dados de apoio à agenda.",
+    description: "Catálogo simplificado de medicamentos para padronização farmacoterapêutica.",
   },
 ];
 
@@ -82,7 +82,7 @@ export default function AgendaWorkspace({ setActivePage }) {
     if (aba === "conciliacao-ceaf") return <ConciliacaoCeaf setActivePage={setActivePage} />;
     if (aba === "notificacoes") return <NotificacoesWhatsapp setActivePage={setActivePage} abaInicial="notificacoes" />;
     if (aba === "whatsapp") return <NotificacoesWhatsapp setActivePage={setActivePage} abaInicial="whatsapp" />;
-    if (aba === "catalogo") return <AgendaCatalogo setActivePage={setActivePage} />;
+    if (aba === "catalogo") return <CatalogoMedicamentos setActivePage={setActivePage} />;
     return <AgendaAlertas setActivePage={setActivePage} />;
   }
 

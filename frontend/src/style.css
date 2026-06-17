@@ -2447,3 +2447,24 @@ button {
 .alert-card.alert-informativo {
   border-left-color: #0284c7;
 }
+
+/* 15D.7A - Catálogo simplificado de medicamentos */
+.catalogo-medicamentos-page .tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.catalogo-checkbox-inline {
+  align-self: end;
+  min-height: 42px;
+}
+
+.catalogo-medicamentos-table td:first-child {
+  min-width: 260px;
+}
+
+.catalogo-medicamentos-table .block {
+  display: block;
+  margin-top: 0.25rem;
+}
