@@ -56,10 +56,10 @@ from schemas.core import (
     Token, UserOut, PasswordReset, ChangeOwnPassword, InativarPayload,
     IntervencaoCreate, IntervencaoOut, Indicadores, UserCreate,
 )
-from migrations import aplicar_migracoes_simples
+#from migrations import aplicar_migracoes_simples
 
 
-aplicar_migracoes_simples()
+#aplicar_migracoes_simples()
 
 app = FastAPI(title="Sistema de Intervenção Farmacêutica", version="1.0.0")
 
