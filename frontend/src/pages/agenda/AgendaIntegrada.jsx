@@ -44,8 +44,23 @@ export default function AgendaIntegrada() {
   });
 
   function gerarParametrosPeriodo(periodo) {
+    const params = {
+      limit: 150,
+      offset: 0,
+      somente_ativos: filtroStatus !== "todos",
+    };
+
+    if (filtroStatus && filtroStatus !== "todos" && filtroStatus !== "ativos") {
+      params.status = filtroStatus;
+    }
+
+    if (filtroPacienteAgenda.trim().length >= 3) {
+      params.paciente = filtroPacienteAgenda.trim();
+      params.limit = 80;
+    }
+
     if (periodo === "todos") {
-      return {};
+      return params;
     }
 
     const hojeLocal = new Date();
@@ -55,6 +70,7 @@ export default function AgendaIntegrada() {
     dataFim.setDate(dataFim.getDate() + Number(periodo));
 
     return {
+      ...params,
       data_inicio: hojeLocal.toISOString().split("T")[0],
       data_fim: dataFim.toISOString().split("T")[0],
     };
@@ -71,7 +87,8 @@ export default function AgendaIntegrada() {
       setEventos(response.data.eventos || []);
 
       const notificacoesResponse = await api.get(
-        "/consultorio/agenda/notificacoes"
+        "/consultorio/agenda/notificacoes",
+        { params: { incluir_listas: false, limite_lista: 0 } }
       );
 
       setNotificacoes(notificacoesResponse.data || null);
@@ -84,9 +101,13 @@ export default function AgendaIntegrada() {
   }
 
   useEffect(() => {
-    carregarAgenda();
+    const timer = setTimeout(() => {
+      carregarAgenda();
+    }, filtroPacienteAgenda.trim().length >= 1 ? 450 : 0);
+
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [periodoAgenda]);
+  }, [periodoAgenda, filtroStatus, filtroPacienteAgenda]);
 
   function eventoCorrespondeAoPaciente(evento, termo) {
     const termoNormalizado = normalizarTexto(termo);

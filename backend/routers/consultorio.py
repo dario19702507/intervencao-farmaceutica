@@ -365,6 +365,57 @@ def _retirada_ceaf_existente_mes(db: Session, paciente: PacienteCEAF, inicio_mes
     ).first()
 
 
+def _mapear_retiradas_ceaf_mes(db: Session, inicio_mes: date, fim_mes: date) -> dict:
+    """Mapeia retiradas CEAF do mês em uma única consulta.
+
+    Evita uma consulta por paciente nas telas de resumo, conciliação e alertas.
+    Esse ponto ficou crítico depois da importação CEAF e da geração de centenas
+    de eventos de agenda.
+    """
+    registros = _query_retiradas_ceaf_mes(db, inicio_mes, fim_mes).with_entities(
+        AgendaIntegrada.id,
+        AgendaIntegrada.paciente_ceaf_id,
+        AgendaIntegrada.paciente_clinico_id,
+        AgendaIntegrada.paciente_id,
+        AgendaIntegrada.status,
+    ).all()
+
+    por_ceaf = set()
+    por_clinico = set()
+    por_agenda = set()
+    realizados_ceaf = set()
+    status_counts = defaultdict(int)
+
+    for item in registros:
+        status_norm = _status_normalizado(item.status)
+        status_counts[status_norm] += 1
+
+        if item.paciente_ceaf_id:
+            por_ceaf.add(item.paciente_ceaf_id)
+            if status_norm in {"realizado", "concluido"}:
+                realizados_ceaf.add(item.paciente_ceaf_id)
+        if item.paciente_clinico_id:
+            por_clinico.add(item.paciente_clinico_id)
+        if item.paciente_id:
+            por_agenda.add(item.paciente_id)
+
+    return {
+        "por_ceaf": por_ceaf,
+        "por_clinico": por_clinico,
+        "por_agenda": por_agenda,
+        "realizados_ceaf": realizados_ceaf,
+        "status_counts": status_counts,
+    }
+
+
+def _paciente_tem_retirada_mapeada(paciente: PacienteCEAF, mapa_retiradas: dict) -> bool:
+    return (
+        (paciente.id and paciente.id in mapa_retiradas.get("por_ceaf", set()))
+        or (paciente.paciente_clinico_id and paciente.paciente_clinico_id in mapa_retiradas.get("por_clinico", set()))
+        or (paciente.paciente_agenda_id and paciente.paciente_agenda_id in mapa_retiradas.get("por_agenda", set()))
+    )
+
+
 def _pendencia_renovacao_ceaf_existente(db: Session, paciente: PacienteCEAF) -> Optional[AgendaIntegrada]:
     return db.query(AgendaIntegrada).filter(
         AgendaIntegrada.servico_origem == "CEAF",
@@ -420,35 +471,49 @@ def _criar_pendencia_renovacao_ceaf(db: Session, paciente: PacienteCEAF, data_ba
 
 
 def _montar_resumo_conciliacao_ceaf(db: Session, inicio_mes: date, fim_mes: date) -> dict:
-    pacientes_ativos = db.query(PacienteCEAF).filter(or_(PacienteCEAF.ativo == True, PacienteCEAF.ativo.is_(None))).count()
-    retiradas_mes = _query_retiradas_ceaf_mes(db, inicio_mes, fim_mes).all()
-    status_counts = defaultdict(int)
-    for agenda in retiradas_mes:
-        status_counts[_status_normalizado(agenda.status)] += 1
+    """Resumo da conciliação CEAF com consultas agregadas.
+
+    A versão anterior percorria todos os pacientes e fazia busca individual de
+    retirada para cada um. Em produção/Supabase isso gerava lentidão severa nas
+    abas de Agenda e Conciliação.
+    """
+    pacientes_ativos_query = db.query(PacienteCEAF).filter(
+        or_(PacienteCEAF.ativo == True, PacienteCEAF.ativo.is_(None))
+    )
+    pacientes_ativos = pacientes_ativos_query.count()
+
+    mapa_retiradas = _mapear_retiradas_ceaf_mes(db, inicio_mes, fim_mes)
+    status_counts = mapa_retiradas["status_counts"]
 
     hoje = date.today()
     em_30_dias = hoje + timedelta(days=30)
-    lme_vencidas = db.query(PacienteCEAF).filter(
-        or_(PacienteCEAF.ativo == True, PacienteCEAF.ativo.is_(None)),
+    lme_vencidas = pacientes_ativos_query.filter(
         PacienteCEAF.data_fim_vigencia.isnot(None),
         PacienteCEAF.data_fim_vigencia < hoje,
     ).count()
-    lme_vencendo_30 = db.query(PacienteCEAF).filter(
-        or_(PacienteCEAF.ativo == True, PacienteCEAF.ativo.is_(None)),
+    lme_vencendo_30 = pacientes_ativos_query.filter(
         PacienteCEAF.data_fim_vigencia.isnot(None),
         PacienteCEAF.data_fim_vigencia >= hoje,
         PacienteCEAF.data_fim_vigencia <= em_30_dias,
     ).count()
 
-    pacientes = db.query(PacienteCEAF).filter(or_(PacienteCEAF.ativo == True, PacienteCEAF.ativo.is_(None))).all()
+    pacientes_minimos = pacientes_ativos_query.with_entities(
+        PacienteCEAF.id,
+        PacienteCEAF.nome,
+        PacienteCEAF.paciente_clinico_id,
+        PacienteCEAF.paciente_agenda_id,
+        PacienteCEAF.situacao_lme,
+        PacienteCEAF.data_fim_vigencia,
+    ).all()
+
     sem_retirada_prevista = 0
     bloqueados_lme = 0
-    for paciente in pacientes:
+    for paciente in pacientes_minimos:
         data_prevista = _data_retirada_prevista_mes(inicio_mes, fim_mes, paciente.data_fim_vigencia)
         if not _situacao_lme_vigente(paciente, data_prevista or max(date.today(), inicio_mes)):
             bloqueados_lme += 1
             continue
-        if not _retirada_ceaf_existente_mes(db, paciente, inicio_mes, fim_mes):
+        if not _paciente_tem_retirada_mapeada(paciente, mapa_retiradas):
             sem_retirada_prevista += 1
 
     return {
@@ -567,12 +632,8 @@ def _resumo_alertas_ceaf(alertas: list[dict]) -> dict:
     return resumo
 
 
-def _coletar_alertas_ceaf(db: Session, limite: int = 300) -> list[dict]:
-    """Gera alertas CEAF sem criar registros.
-
-    A visão geral da agenda e a aba de notificações podem consumir esta mesma
-    lógica, evitando regras paralelas para LME, retiradas e risco assistencial.
-    """
+def _coletar_alertas_ceaf(db: Session, limite: int = 120) -> list[dict]:
+    """Gera alertas CEAF sem criar registros e sem consultas paciente a paciente."""
     hoje = date.today()
     amanha = hoje + timedelta(days=1)
     em_7_dias = hoje + timedelta(days=7)
@@ -585,7 +646,13 @@ def _coletar_alertas_ceaf(db: Session, limite: int = 300) -> list[dict]:
         or_(PacienteCEAF.ativo == True, PacienteCEAF.ativo.is_(None))
     )
 
-    pacientes = pacientes_query.order_by(PacienteCEAF.nome.asc()).limit(max(1, min(limite * 3, 2000))).all()
+    # Prioriza pacientes com LME vencida/a vencer e limita a carga inicial.
+    pacientes = pacientes_query.order_by(
+        PacienteCEAF.data_fim_vigencia.asc().nullslast(),
+        PacienteCEAF.nome.asc(),
+    ).limit(max(1, min(limite * 2, 800))).all()
+
+    mapa_retiradas = _mapear_retiradas_ceaf_mes(db, inicio_mes, fim_mes)
 
     for paciente in pacientes:
         if paciente.data_fim_vigencia:
@@ -630,7 +697,7 @@ def _coletar_alertas_ceaf(db: Session, limite: int = 300) -> list[dict]:
                     acao_sugerida="Preparar documentação de renovação.",
                 ))
 
-        if _situacao_lme_vigente(paciente, hoje) and not _retirada_ceaf_existente_mes(db, paciente, inicio_mes, fim_mes):
+        if _situacao_lme_vigente(paciente, hoje) and not _paciente_tem_retirada_mapeada(paciente, mapa_retiradas):
             alertas.append(_alerta_ceaf(
                 tipo_alerta="ceaf_sem_retirada_no_mes",
                 prioridade_ceaf="atencao",
@@ -642,7 +709,7 @@ def _coletar_alertas_ceaf(db: Session, limite: int = 300) -> list[dict]:
 
     retiradas_base = _query_retiradas_ceaf_mes(db, inicio_mes, fim_mes).filter(
         func.lower(AgendaIntegrada.status).in_(STATUS_ATIVOS_AGENDA)
-    ).all()
+    ).order_by(AgendaIntegrada.data_evento.asc()).limit(max(1, min(limite * 2, 800))).all()
 
     for evento in retiradas_base:
         status = _status_normalizado(evento.status)
@@ -725,7 +792,7 @@ def _alertas_ceaf_para_notificacoes(alertas: list[dict]) -> list[dict]:
     return notificacoes
 
 
-def _gerar_notificacoes_ceaf_agenda(db: Session, limite: int = 300) -> dict:
+def _gerar_notificacoes_ceaf_agenda(db: Session, limite: int = 120) -> dict:
     """Materializa alertas CEAF na tabela de notificações da agenda.
 
     Usado pela aba Notificações para preparar mensagens, sem disparo automático
@@ -1028,25 +1095,31 @@ def listar_agenda(
     status: Optional[str] = None,
     origem: Optional[str] = None,
     tipo_evento: Optional[str] = None,
+    paciente: Optional[str] = None,
+    somente_ativos: bool = True,
+    limit: int = 150,
+    offset: int = 0,
     db: Session = Depends(get_db_consultorio),
     current=Depends(get_current_user_consultorio)
 ):
+    """Lista agenda com limites de produção.
+
+    A agenda passou a ter centenas de eventos CEAF; por isso a listagem agora
+    aplica limite/paginação e filtro de ativos por padrão. Use
+    somente_ativos=false quando precisar consultar encerrados.
+    """
     query = db.query(AgendaIntegrada)
 
     if data_inicio:
-        query = query.filter(
-            AgendaIntegrada.data_evento >= data_inicio
-        )
+        query = query.filter(AgendaIntegrada.data_evento >= data_inicio)
 
     if data_fim:
-        query = query.filter(
-            AgendaIntegrada.data_evento <= data_fim
-        )
+        query = query.filter(AgendaIntegrada.data_evento <= data_fim)
 
     if status:
-        query = query.filter(
-            AgendaIntegrada.status == status
-        )
+        query = query.filter(func.lower(AgendaIntegrada.status) == status.lower())
+    elif somente_ativos:
+        query = query.filter(func.lower(AgendaIntegrada.status).notin_(STATUS_ENCERRADOS_AGENDA))
 
     if origem:
         query = query.filter(func.lower(AgendaIntegrada.servico_origem) == origem.lower())
@@ -1054,12 +1127,27 @@ def listar_agenda(
     if tipo_evento:
         query = query.filter(func.lower(AgendaIntegrada.tipo_evento) == tipo_evento.lower())
 
+    if paciente and paciente.strip():
+        termo = f"%{paciente.strip().lower()}%"
+        query = query.filter(or_(
+            func.lower(AgendaIntegrada.paciente_nome).like(termo),
+            func.lower(AgendaIntegrada.telefone).like(termo),
+            func.lower(AgendaIntegrada.medicamento).like(termo),
+            func.lower(AgendaIntegrada.situacao_laudo).like(termo),
+        ))
+
+    total = query.count()
+    limite_seguro = max(1, min(limit or 150, 500))
+    offset_seguro = max(0, offset or 0)
     eventos = query.order_by(
-        AgendaIntegrada.data_evento.asc()
-    ).all()
+        AgendaIntegrada.data_evento.asc().nullslast(),
+        AgendaIntegrada.id.desc(),
+    ).offset(offset_seguro).limit(limite_seguro).all()
 
     return {
-        "total": len(eventos),
+        "total": total,
+        "limit": limite_seguro,
+        "offset": offset_seguro,
         "eventos": eventos
     }
 
@@ -1964,7 +2052,7 @@ def alertas_pendentes(
 ):
     base = svc_alertas_pendentes(db=db)
     alertas_base = base.get("alertas", [])
-    alertas_ceaf = _coletar_alertas_ceaf(db, limite=200)
+    alertas_ceaf = _coletar_alertas_ceaf(db, limite=80)
     alertas = alertas_base + alertas_ceaf
 
     def peso(item):
@@ -1990,7 +2078,7 @@ def alertas_pendentes(
 
 @router.get("/agenda/alertas-ceaf")
 def listar_alertas_ceaf_agenda(
-    limite: int = 300,
+    limite: int = 120,
     db: Session = Depends(get_db_consultorio),
     current=Depends(get_current_user_consultorio)
 ):
@@ -2007,13 +2095,13 @@ def resumo_alertas_ceaf_agenda(
     db: Session = Depends(get_db_consultorio),
     current=Depends(get_current_user_consultorio)
 ):
-    alertas = _coletar_alertas_ceaf(db, limite=1000)
+    alertas = _coletar_alertas_ceaf(db, limite=120)
     return _resumo_alertas_ceaf(alertas)
 
 
 @router.get("/agenda/notificacoes-pendentes-ceaf")
 def notificacoes_pendentes_ceaf_agenda(
-    limite: int = 300,
+    limite: int = 120,
     db: Session = Depends(get_db_consultorio),
     current=Depends(get_current_user_consultorio)
 ):
@@ -2028,86 +2116,102 @@ def notificacoes_pendentes_ceaf_agenda(
 
 @router.get("/agenda/notificacoes")
 def buscar_notificacoes_agenda(
+    incluir_listas: bool = True,
+    limite_lista: int = 50,
     db: Session = Depends(get_db_consultorio),
     current=Depends(get_current_user_consultorio)
 ):
+    """Resumo leve de notificações da agenda.
+
+    Usa count() para os cartões e limita as listas retornadas. Isso evita que a
+    aba Agenda carregue centenas de registros CEAF apenas para calcular números.
+    """
     hoje = date.today()
     amanha = hoje + timedelta(days=1)
     em_15_dias = hoje + timedelta(days=15)
     em_30_dias = hoje + timedelta(days=30)
+    limite_lista = max(0, min(limite_lista or 50, 100))
 
-    risco_interrupcao_agenda = db.query(AgendaIntegrada).filter(
+    risco_query = db.query(AgendaIntegrada).filter(
         func.lower(AgendaIntegrada.status) == "risco_interrupcao_tratamento"
-    ).all()
-
-    lme_vencidas_ceaf = db.query(PacienteCEAF).filter(
+    )
+    lme_vencidas_query = db.query(PacienteCEAF).filter(
         or_(PacienteCEAF.ativo == True, PacienteCEAF.ativo.is_(None)),
         PacienteCEAF.data_fim_vigencia.isnot(None),
         PacienteCEAF.data_fim_vigencia < hoje,
-    ).all()
-
-    renovacoes_urgentes = db.query(AgendaIntegrada).filter(
+    )
+    renovacoes_urgentes_query = db.query(AgendaIntegrada).filter(
         func.lower(AgendaIntegrada.tipo_evento).in_(TIPOS_RENOVACAO_AGENDA),
         AgendaIntegrada.data_fim_vigencia.isnot(None),
         AgendaIntegrada.data_fim_vigencia >= hoje,
         AgendaIntegrada.data_fim_vigencia <= em_15_dias,
         func.lower(AgendaIntegrada.status).notin_(STATUS_ENCERRADOS_AGENDA),
-    ).all()
-
-    renovacoes_recomendadas = db.query(AgendaIntegrada).filter(
+    )
+    renovacoes_recomendadas_query = db.query(AgendaIntegrada).filter(
         func.lower(AgendaIntegrada.tipo_evento).in_(TIPOS_RENOVACAO_AGENDA),
         AgendaIntegrada.data_fim_vigencia.isnot(None),
         AgendaIntegrada.data_fim_vigencia > em_15_dias,
         AgendaIntegrada.data_fim_vigencia <= em_30_dias,
         func.lower(AgendaIntegrada.status).notin_(STATUS_ENCERRADOS_AGENDA),
-    ).all()
-
-    # Complementa a central com pacientes CEAF que ainda não têm evento de renovação.
-    ceaf_urgentes = db.query(PacienteCEAF).filter(
+    )
+    ceaf_urgentes_query = db.query(PacienteCEAF).filter(
         or_(PacienteCEAF.ativo == True, PacienteCEAF.ativo.is_(None)),
         PacienteCEAF.data_fim_vigencia.isnot(None),
         PacienteCEAF.data_fim_vigencia >= hoje,
         PacienteCEAF.data_fim_vigencia <= em_15_dias,
-    ).all()
-    ceaf_recomendados = db.query(PacienteCEAF).filter(
+    )
+    ceaf_recomendados_query = db.query(PacienteCEAF).filter(
         or_(PacienteCEAF.ativo == True, PacienteCEAF.ativo.is_(None)),
         PacienteCEAF.data_fim_vigencia.isnot(None),
         PacienteCEAF.data_fim_vigencia > em_15_dias,
         PacienteCEAF.data_fim_vigencia <= em_30_dias,
-    ).all()
-
-    dispensacoes_amanha = db.query(AgendaIntegrada).filter(
+    )
+    dispensacoes_amanha_query = db.query(AgendaIntegrada).filter(
         func.lower(AgendaIntegrada.tipo_evento).in_(TIPOS_RETIRADA_AGENDA),
         AgendaIntegrada.data_evento == amanha,
         func.lower(AgendaIntegrada.status).in_({"agendado", "notificado"})
-    ).all()
-
-    consultas_amanha = db.query(AgendaIntegrada).filter(
+    )
+    consultas_amanha_query = db.query(AgendaIntegrada).filter(
         func.lower(AgendaIntegrada.servico_origem) == "consultorio",
         AgendaIntegrada.data_evento == amanha,
         func.lower(AgendaIntegrada.status).in_({"agendado", "notificado"})
-    ).all()
+    )
 
-    return {
+    risco_total = risco_query.count()
+    lme_vencidas_total = lme_vencidas_query.count()
+    renovacoes_urgentes_total = renovacoes_urgentes_query.count()
+    renovacoes_recomendadas_total = renovacoes_recomendadas_query.count()
+    ceaf_urgentes_total = ceaf_urgentes_query.count()
+    ceaf_recomendados_total = ceaf_recomendados_query.count()
+    dispensacoes_amanha_total = dispensacoes_amanha_query.count()
+    consultas_amanha_total = consultas_amanha_query.count()
+
+    resposta = {
         "resumo": {
-            "risco_interrupcao": len(risco_interrupcao_agenda) + len(lme_vencidas_ceaf),
-            "renovacoes_urgentes": len(renovacoes_urgentes) + len(ceaf_urgentes),
-            "renovacoes_recomendadas": len(renovacoes_recomendadas) + len(ceaf_recomendados),
-            "dispensacoes_amanha": len(dispensacoes_amanha),
-            "consultas_amanha": len(consultas_amanha),
-            "ceaf_lme_vencidas": len(lme_vencidas_ceaf),
-            "ceaf_lme_vencendo_15_dias": len(ceaf_urgentes),
-            "ceaf_lme_vencendo_30_dias": len(ceaf_recomendados),
-        },
-        "risco_interrupcao": risco_interrupcao_agenda,
-        "ceaf_lme_vencidas": [_paciente_ceaf_resumo(p) for p in lme_vencidas_ceaf[:100]],
-        "renovacoes_urgentes": renovacoes_urgentes,
-        "renovacoes_recomendadas": renovacoes_recomendadas,
-        "ceaf_renovacoes_urgentes": [_paciente_ceaf_resumo(p) for p in ceaf_urgentes[:100]],
-        "ceaf_renovacoes_recomendadas": [_paciente_ceaf_resumo(p) for p in ceaf_recomendados[:100]],
-        "dispensacoes_amanha": dispensacoes_amanha,
-        "consultas_amanha": consultas_amanha,
+            "risco_interrupcao": risco_total + lme_vencidas_total,
+            "renovacoes_urgentes": renovacoes_urgentes_total + ceaf_urgentes_total,
+            "renovacoes_recomendadas": renovacoes_recomendadas_total + ceaf_recomendados_total,
+            "dispensacoes_amanha": dispensacoes_amanha_total,
+            "consultas_amanha": consultas_amanha_total,
+            "ceaf_lme_vencidas": lme_vencidas_total,
+            "ceaf_lme_vencendo_15_dias": ceaf_urgentes_total,
+            "ceaf_lme_vencendo_30_dias": ceaf_recomendados_total,
+        }
     }
+
+    if incluir_listas and limite_lista > 0:
+        resposta.update({
+            "risco_interrupcao": risco_query.limit(limite_lista).all(),
+            "ceaf_lme_vencidas": [_paciente_ceaf_resumo(p) for p in lme_vencidas_query.order_by(PacienteCEAF.data_fim_vigencia.asc()).limit(limite_lista).all()],
+            "renovacoes_urgentes": renovacoes_urgentes_query.limit(limite_lista).all(),
+            "renovacoes_recomendadas": renovacoes_recomendadas_query.limit(limite_lista).all(),
+            "ceaf_renovacoes_urgentes": [_paciente_ceaf_resumo(p) for p in ceaf_urgentes_query.order_by(PacienteCEAF.data_fim_vigencia.asc()).limit(limite_lista).all()],
+            "ceaf_renovacoes_recomendadas": [_paciente_ceaf_resumo(p) for p in ceaf_recomendados_query.order_by(PacienteCEAF.data_fim_vigencia.asc()).limit(limite_lista).all()],
+            "dispensacoes_amanha": dispensacoes_amanha_query.limit(limite_lista).all(),
+            "consultas_amanha": consultas_amanha_query.limit(limite_lista).all(),
+        })
+
+    return resposta
 
 @router.post("/agenda/notificacoes/gerar")
 def executar_geracao_notificacoes_agenda(
