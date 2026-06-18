@@ -205,11 +205,7 @@ def historico_paciente_mestre(
         AgendaIntegrada.id.desc()
     ).all()
 
-    simplificados = db.query(PacienteSimplificado).filter(
-        PacienteSimplificado.paciente_agenda_id == paciente_id
-    ).order_by(
-        PacienteSimplificado.criado_em.desc()
-    ).all()
+    simplificados = []
 
     clinicos = db.query(PacienteClinico).filter(
         PacienteClinico.paciente_agenda_id == paciente_id
