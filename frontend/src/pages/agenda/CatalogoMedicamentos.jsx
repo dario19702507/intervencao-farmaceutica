@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api/api";
 
-const LIMITE_PAGINA = 50;
+const LIMITE_PAGINA = 20;
+const MIN_BUSCA = 3;
 
 const medicamentoVazio = {
   principio_ativo: "",
@@ -41,6 +42,7 @@ export default function CatalogoMedicamentos() {
   const [medicamentos, setMedicamentos] = useState([]);
   const [resumo, setResumo] = useState(null);
   const [busca, setBusca] = useState("");
+  const [buscaExecutada, setBuscaExecutada] = useState(false);
   const [somenteAtivos, setSomenteAtivos] = useState(true);
   const [offset, setOffset] = useState(0);
   const [total, setTotal] = useState(0);
@@ -69,13 +71,24 @@ export default function CatalogoMedicamentos() {
     }
   }
 
-  async function carregarMedicamentos(novoOffset = offset) {
+  async function carregarMedicamentos(novoOffset = offset, termoBusca = busca) {
+    const termo = termoBusca.trim();
+    if (termo.length < MIN_BUSCA) {
+      setMedicamentos([]);
+      setTotal(0);
+      setOffset(0);
+      setBuscaExecutada(false);
+      setErro(termo.length > 0 ? `Digite pelo menos ${MIN_BUSCA} caracteres para pesquisar.` : "");
+      return;
+    }
+
     setLoading(true);
     setErro("");
+    setBuscaExecutada(true);
     try {
       const response = await api.get("/medicamentos", {
         params: {
-          q: busca.trim() || undefined,
+          q: termo,
           ativo: somenteAtivos ? true : undefined,
           limit: LIMITE_PAGINA,
           offset: novoOffset,
@@ -94,8 +107,6 @@ export default function CatalogoMedicamentos() {
 
   useEffect(() => {
     carregarResumo();
-    carregarMedicamentos(0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function atualizarCampo(campo, valor) {
@@ -157,7 +168,9 @@ export default function CatalogoMedicamentos() {
       setEditandoId(null);
       setFormulario(medicamentoVazio);
       await carregarResumo();
-      await carregarMedicamentos(offset);
+      if (busca.trim().length >= MIN_BUSCA) {
+        await carregarMedicamentos(offset);
+      }
     } catch (error) {
       console.error("Erro ao salvar medicamento:", error);
       setErro(normalizarErro(error, "Erro ao salvar medicamento."));
@@ -176,7 +189,9 @@ export default function CatalogoMedicamentos() {
       await api.post(`/medicamentos/${item.id}/ativar`, null, { params: { ativo: novoStatus } });
       setMensagem(novoStatus ? "Medicamento reativado." : "Medicamento inativado.");
       await carregarResumo();
-      await carregarMedicamentos(offset);
+      if (busca.trim().length >= MIN_BUSCA) {
+        await carregarMedicamentos(offset);
+      }
     } catch (error) {
       console.error("Erro ao alterar status do medicamento:", error);
       setErro(normalizarErro(error, "Erro ao alterar status do medicamento."));
@@ -206,7 +221,9 @@ export default function CatalogoMedicamentos() {
       setArquivoCsv(null);
       if (inputArquivoRef.current) inputArquivoRef.current.value = "";
       await carregarResumo();
-      await carregarMedicamentos(0);
+      if (busca.trim().length >= MIN_BUSCA) {
+        await carregarMedicamentos(0);
+      }
     } catch (error) {
       console.error("Erro ao importar catálogo:", error);
       setErro(normalizarErro(error, "Erro ao importar CSV."));
@@ -217,7 +234,7 @@ export default function CatalogoMedicamentos() {
 
   async function aplicarBusca(event) {
     event.preventDefault();
-    await carregarMedicamentos(0);
+    await carregarMedicamentos(0, busca);
   }
 
   async function mudarPagina(delta) {
@@ -236,7 +253,7 @@ export default function CatalogoMedicamentos() {
           </p>
         </div>
         <div className="action-buttons">
-          <button className="secondary-button" onClick={() => { carregarResumo(); carregarMedicamentos(offset); }} disabled={loading}>
+          <button className="secondary-button" onClick={() => { carregarResumo(); if (busca.trim().length >= MIN_BUSCA) carregarMedicamentos(offset); }} disabled={loading}>
             {loading ? "Atualizando..." : "Atualizar"}
           </button>
           <button className="primary-button" onClick={novoMedicamento}>Novo medicamento</button>
@@ -270,7 +287,7 @@ export default function CatalogoMedicamentos() {
         <div className="section-header">
           <div>
             <h3>Buscar medicamentos</h3>
-            <p className="muted">Pesquise por princípio ativo, nome comercial, apresentação ou registro ANVISA.</p>
+            <p className="muted">Digite pelo menos 3 caracteres. A lista completa não é carregada automaticamente para manter a página rápida.</p>
           </div>
         </div>
         <form className="filters-row" onSubmit={aplicarBusca}>
@@ -279,7 +296,7 @@ export default function CatalogoMedicamentos() {
             <input
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
-              placeholder="Ex.: losartana, insulina, 50 mg, registro"
+              placeholder="Ex.: losartana, insulina, rosuvastatina"
             />
           </label>
           <label className="checkbox-row catalogo-checkbox-inline">
@@ -295,7 +312,7 @@ export default function CatalogoMedicamentos() {
             <button
               className="secondary-button"
               type="button"
-              onClick={() => { setBusca(""); setSomenteAtivos(true); setTimeout(() => carregarMedicamentos(0), 0); }}
+              onClick={() => { setBusca(""); setSomenteAtivos(true); setMedicamentos([]); setTotal(0); setOffset(0); setBuscaExecutada(false); setErro(""); }}
             >
               Limpar
             </button>
@@ -368,8 +385,8 @@ export default function CatalogoMedicamentos() {
       <div className="form-card">
         <div className="section-header">
           <div>
-            <h3>Medicamentos cadastrados</h3>
-            <p className="muted">{total} registro(s) encontrado(s). Página {paginaAtual} de {totalPaginas}.</p>
+            <h3>Resultado da busca</h3>
+            <p className="muted">{buscaExecutada ? `${total} registro(s) encontrado(s). Página ${paginaAtual} de ${totalPaginas}.` : `Nenhuma lista carregada. Pesquise por nome para visualizar até ${LIMITE_PAGINA} resultados por página.`}</p>
           </div>
           <div className="action-buttons">
             <button className="secondary-button" disabled={offset === 0 || loading} onClick={() => mudarPagina(-1)}>Anterior</button>
@@ -379,8 +396,10 @@ export default function CatalogoMedicamentos() {
 
         {loading ? (
           <p className="muted">Carregando medicamentos...</p>
+        ) : !buscaExecutada ? (
+          <p className="muted">Use o campo de busca acima para localizar medicamentos por princípio ativo, nome comercial, apresentação ou registro.</p>
         ) : medicamentos.length === 0 ? (
-          <p className="muted">Nenhum medicamento encontrado.</p>
+          <p className="muted">Nenhum medicamento encontrado para o termo informado.</p>
         ) : (
           <div className="table-wrapper">
             <table className="agenda-table catalogo-medicamentos-table">
