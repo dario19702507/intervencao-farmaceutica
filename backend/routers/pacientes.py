@@ -1,7 +1,8 @@
 from datetime import datetime, date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from routers.consultorio import (
@@ -28,31 +29,49 @@ router = APIRouter(
 def listar_pacientes_mestre(
     termo: Optional[str] = None,
     ativo: Optional[bool] = True,
+    limit: int = Query(30, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db_consultorio),
     current=Depends(get_current_user_consultorio)
 ):
+    termo_limpo = (termo or "").strip()
+
+    # Evita carregamento integral do Cadastro Mestre ao abrir a página.
+    # A tela passa a operar no modelo "busca primeiro".
+    if len(termo_limpo) < 3:
+        return {
+            "total": 0,
+            "pacientes": [],
+            "limit": limit,
+            "offset": offset,
+            "mensagem": "Informe ao menos 3 caracteres para buscar pacientes."
+        }
+
     query = db.query(PacienteAgenda)
 
     if ativo is not None:
         query = query.filter(PacienteAgenda.ativo == ativo)
 
-    if termo:
-        termo_like = f"%{termo.strip()}%"
+    termo_like = f"%{termo_limpo}%"
 
-        query = query.filter(
-            PacienteAgenda.nome.ilike(termo_like)
-            | PacienteAgenda.cpf.ilike(termo_like)
-            | PacienteAgenda.cns.ilike(termo_like)
-            | PacienteAgenda.telefone.ilike(termo_like)
-        )
+    query = query.filter(
+        PacienteAgenda.nome.ilike(termo_like)
+        | PacienteAgenda.cpf.ilike(termo_like)
+        | PacienteAgenda.cns.ilike(termo_like)
+        | PacienteAgenda.telefone.ilike(termo_like)
+    )
+
+    total = query.with_entities(func.count(PacienteAgenda.id)).scalar() or 0
 
     pacientes = query.order_by(
         PacienteAgenda.nome.asc()
-    ).limit(300).all()
+    ).offset(offset).limit(limit).all()
 
     return {
-        "total": len(pacientes),
-        "pacientes": pacientes
+        "total": total,
+        "pacientes": pacientes,
+        "limit": limit,
+        "offset": offset
     }
 
 

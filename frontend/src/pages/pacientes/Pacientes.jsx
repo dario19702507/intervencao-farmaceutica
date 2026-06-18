@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api } from "../../api/api";
 
 export default function Pacientes() {
   const [pacientes, setPacientes] = useState([]);
   const [termo, setTermo] = useState("");
   const [loading, setLoading] = useState(false);
+  const [buscaRealizada, setBuscaRealizada] = useState(false);
+  const [mensagemBusca, setMensagemBusca] = useState("Digite ao menos 3 caracteres para buscar um paciente.");
 
   const [historico, setHistorico] = useState(null);
   const [pacienteSelecionado, setPacienteSelecionado] = useState(null);
@@ -13,28 +15,46 @@ export default function Pacientes() {
   const [pacienteEditando, setPacienteEditando] = useState(null);
   const [formPaciente, setFormPaciente] = useState({});
 
-  async function carregarPacientes(busca = "") {
+  async function carregarPacientes(busca = termo) {
+    const termoBusca = (busca || "").trim();
+
+    if (termoBusca.length < 3) {
+      setPacientes([]);
+      setBuscaRealizada(false);
+      setMensagemBusca("Digite ao menos 3 caracteres para buscar por nome, CPF, CNS ou telefone.");
+      return;
+    }
+
     try {
       setLoading(true);
+      setBuscaRealizada(true);
+      setMensagemBusca("");
 
       const response = await api.get("/consultorio/pacientes", {
         params: {
-          termo: busca || undefined,
+          termo: termoBusca,
+          limit: 30,
         },
       });
 
-      setPacientes(response.data.pacientes || []);
+      const lista = response.data.pacientes || [];
+      setPacientes(lista);
+
+      if (lista.length === 0) {
+        setMensagemBusca("Nenhum paciente encontrado para o termo informado.");
+      } else if ((response.data.total || lista.length) > lista.length) {
+        setMensagemBusca(`Exibindo ${lista.length} pacientes. Refine a busca para resultados mais específicos.`);
+      } else {
+        setMensagemBusca(`${lista.length} paciente(s) encontrado(s).`);
+      }
     } catch (error) {
       console.error(error);
+      setMensagemBusca("Erro ao buscar pacientes.");
       alert("Erro ao carregar pacientes.");
     } finally {
       setLoading(false);
     }
   }
-
-  useEffect(() => {
-    carregarPacientes();
-  }, []);
 
   async function abrirHistorico(paciente) {
     try {
@@ -89,7 +109,9 @@ export default function Pacientes() {
       setPacienteEditando(null);
       setFormPaciente({});
 
-      await carregarPacientes(termo);
+      if ((termo || "").trim().length >= 3) {
+        await carregarPacientes(termo);
+      }
 
       if (pacienteSelecionado?.id === pacienteAtualizado.id) {
         await abrirHistorico(pacienteAtualizado);
@@ -123,24 +145,39 @@ export default function Pacientes() {
             type="text"
             value={termo}
             placeholder="Nome, CPF, CNS ou telefone"
-            onChange={(e) => setTermo(e.target.value)}
+            onChange={(e) => {
+              const valor = e.target.value;
+              setTermo(valor);
+              if (valor.trim().length < 3) {
+                setPacientes([]);
+                setBuscaRealizada(false);
+                setMensagemBusca("Digite ao menos 3 caracteres para buscar por nome, CPF, CNS ou telefone.");
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                carregarPacientes(termo);
+              }
+            }}
           />
         </label>
 
         <button
           className="primary-button"
+          disabled={loading || termo.trim().length < 3}
           onClick={() => carregarPacientes(termo)}
         >
-          Pesquisar
+          {loading ? "Buscando..." : "Pesquisar"}
         </button>
       </div>
 
       <div className="form-card">
-        <h3>Pacientes ({pacientes.length})</h3>
+        <h3>Resultado da busca</h3>
+        {mensagemBusca && <p className="muted-text">{mensagemBusca}</p>}
 
         {loading ? (
           <p>Carregando...</p>
-        ) : (
+        ) : pacientes.length > 0 ? (
           <table className="agenda-table">
             <thead>
               <tr>
@@ -180,6 +217,10 @@ export default function Pacientes() {
               ))}
             </tbody>
           </table>
+        ) : buscaRealizada ? (
+          <p>Nenhum paciente localizado.</p>
+        ) : (
+          <p>Use o campo acima para localizar o paciente no cadastro mestre.</p>
         )}
       </div>
 
