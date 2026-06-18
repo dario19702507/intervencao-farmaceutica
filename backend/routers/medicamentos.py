@@ -326,14 +326,16 @@ def ativar_inativar_medicamento(
 
 
 ALIASES_IMPORTACAO = {
-    "principio_ativo": ["principio ativo", "princípio ativo", "substancia", "substância", "farmaco", "fármaco", "nome substancia"],
-    "nome_comercial": ["nome comercial", "produto", "medicamento", "nome produto", "nome do produto"],
+    # Inclui tanto cabeçalhos com espaço quanto cabeçalhos técnicos com underscore.
+    # Ex.: principio_ativo;concentracao;forma_farmaceutica;via_administracao
+    "principio_ativo": ["principio_ativo", "principio ativo", "princípio ativo", "substancia", "substância", "farmaco", "fármaco", "nome substancia"],
+    "nome_comercial": ["nome_comercial", "nome comercial", "produto", "medicamento", "nome produto", "nome do produto"],
     "concentracao": ["concentracao", "concentração", "concentracao medicamento", "concentração medicamento"],
-    "forma_farmaceutica": ["forma farmaceutica", "forma farmacêutica", "forma", "forma farmac"],
-    "via_administracao": ["via administracao", "via administração", "via", "via de administracao", "via de administração"],
-    "registro_anvisa": ["registro anvisa", "registro", "numero registro", "número registro"],
-    "classe_terapeutica": ["classe terapeutica", "classe terapêutica", "classe", "categoria"],
-    "codigo_atc": ["codigo atc", "código atc", "atc"],
+    "forma_farmaceutica": ["forma_farmaceutica", "forma farmaceutica", "forma farmacêutica", "forma", "forma farmac"],
+    "via_administracao": ["via_administracao", "via administracao", "via administração", "via", "via de administracao", "via de administração"],
+    "registro_anvisa": ["registro_anvisa", "registro anvisa", "registro", "numero registro", "número registro"],
+    "classe_terapeutica": ["classe_terapeutica", "classe terapeutica", "classe terapêutica", "classe", "categoria"],
+    "codigo_atc": ["codigo_atc", "codigo atc", "código atc", "atc"],
     "laboratorio": ["laboratorio", "laboratório", "empresa", "empresa detentora", "detentor registro"],
     "apresentacao": ["apresentacao", "apresentação"],
     "componente": ["componente", "componente assistencia", "componente assistência"],
