@@ -209,11 +209,7 @@ def historico_paciente_mestre(
 
     clinicos = []
 
-    notificacoes = db.query(NotificacaoAgenda).filter(
-        NotificacaoAgenda.paciente_id == paciente_id
-    ).order_by(
-        NotificacaoAgenda.criado_em.desc()
-    ).all()
+    notificacoes = []
 
     notificacoes_pendentes = sum(1 for n in notificacoes if n.status == "pendente")
     notificacoes_enviadas = sum(1 for n in notificacoes if n.status == "enviada")
