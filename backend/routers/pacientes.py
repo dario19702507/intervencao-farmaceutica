@@ -207,11 +207,7 @@ def historico_paciente_mestre(
 
     simplificados = []
 
-    clinicos = db.query(PacienteClinico).filter(
-        PacienteClinico.paciente_agenda_id == paciente_id
-    ).order_by(
-        PacienteClinico.criado_em.desc()
-    ).all()
+    clinicos = []
 
     notificacoes = db.query(NotificacaoAgenda).filter(
         NotificacaoAgenda.paciente_id == paciente_id
