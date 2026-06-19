@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api/api";
 
-const LIMIT = 50;
+const LIMIT = 30;
+const MIN_BUSCA = 3;
 
 function formatarData(data) {
   if (!data) return "-";
@@ -103,6 +104,16 @@ export default function PacientesCeaf() {
     try {
       setLoading(true);
       setErro("");
+
+      const termoBusca = filtros.termo.trim();
+
+      if (termoBusca.length < MIN_BUSCA) {
+        setPacientes([]);
+        setTotal(0);
+        setOffset(0);
+        return;
+      }
+
       const response = await api.get("/ceaf/pacientes", {
         params: montarParametros(offsetAtual),
       });
@@ -217,12 +228,13 @@ export default function PacientesCeaf() {
     setTimeout(() => carregarPacientes(0), 0);
   }
 
-  useEffect(() => {
-    carregarResumo();
-    carregarResumoConversao();
-    carregarPacientes(0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    useEffect(() => {
+      carregarResumo();
+      carregarResumoConversao();
+      setPacientes([]);
+      setTotal(0);
+      setOffset(0);
+    }, []);
 
   return (
     <div className="agenda-container pacientes-ceaf-page">
@@ -372,7 +384,9 @@ export default function PacientesCeaf() {
         {loading ? (
           <p>Carregando pacientes CEAF...</p>
         ) : pacientes.length === 0 ? (
-          <p>Nenhum paciente encontrado para os filtros selecionados.</p>
+          <p>{filtros.termo.trim().length < MIN_BUSCA
+            ? "Digite pelo menos 3 caracteres para buscar pacientes CEAF."
+            : "Nenhum paciente CEAF encontrado para os filtros informados."}</p>
         ) : (
           <div className="ceaf-table-wrapper">
             <table className="agenda-table ceaf-table">
