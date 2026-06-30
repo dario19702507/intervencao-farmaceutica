@@ -260,16 +260,30 @@ export default function Consultorio({ usuario }) {
   }, [buscaPacienteProntuario, abaConsultorio]);
 
   useEffect(() => {
-    if (mostrarFormularioMedicamento) {
-      carregarCatalogoMedicamentos(buscaCatalogoMedicamento);
+    if (!mostrarFormularioMedicamento) return;
+
+    const termo = buscaCatalogoMedicamento.trim();
+
+    if (termo.length < 3) {
+      setCatalogoMedicamentos([]);
+      return;
     }
-  }, [mostrarFormularioMedicamento]);
+
+    carregarCatalogoMedicamentos(termo);
+  }, [mostrarFormularioMedicamento, buscaCatalogoMedicamento]);
 
   useEffect(() => {
-    if (medicamentoCicloVida && acaoCicloVidaMedicamento === "TROCAR") {
-      carregarCatalogoMedicamentos(buscaCatalogoMedicamentoSubstituto);
-    }
-  }, [medicamentoCicloVida, acaoCicloVidaMedicamento, buscaCatalogoMedicamentoSubstituto]);
+  if (!medicamentoCicloVida || acaoCicloVidaMedicamento !== "TROCAR") return;
+
+  const termo = buscaCatalogoMedicamentoSubstituto.trim();
+
+  if (termo.length < 3) {
+    setCatalogoMedicamentos([]);
+    return;
+  }
+
+  carregarCatalogoMedicamentos(termo);
+}, [medicamentoCicloVida, acaoCicloVidaMedicamento, buscaCatalogoMedicamentoSubstituto]);
 
   function podeRegistrarClinico() {
     if (!usuario) return false;
@@ -700,17 +714,29 @@ export default function Consultorio({ usuario }) {
     }
   }
 
-  async function carregarCatalogoMedicamentos(busca = "") {
-    try {
-      const response = await api.get("/consultorio/catalogo-medicamentos", {
-        params: { busca: busca || undefined, ativo: true, limite: 80 },
-      });
-      setCatalogoMedicamentos(response.data?.medicamentos || []);
-    } catch (error) {
-      console.warn("Catálogo de medicamentos indisponível.", error.response?.data || error);
-      setCatalogoMedicamentos([]);
-    }
+async function carregarCatalogoMedicamentos(busca = "") {
+  const termo = (busca || "").trim();
+
+  if (termo.length < 3) {
+    setCatalogoMedicamentos([]);
+    return;
   }
+
+  try {
+    const response = await api.get("/consultorio/catalogo-medicamentos", {
+      params: {
+        busca: termo,
+        ativo: true,
+        limite: 20,
+      },
+    });
+
+    setCatalogoMedicamentos(response.data?.medicamentos || []);
+  } catch (error) {
+    console.warn("Catálogo de medicamentos indisponível.", error.response?.data || error);
+    setCatalogoMedicamentos([]);
+  }
+}
 
   function aplicarMedicamentoCatalogo(catalogoId) {
     const selecionado = catalogoMedicamentos.find((m) => String(m.id) === String(catalogoId));
