@@ -16,6 +16,9 @@ function labelMedicamento(m) {
 export default function BuscaMedicamento({
   endpoint = "/medicamentos/buscar",
   label = "Medicamento",
+  id,
+  name,
+  ariaLabel = "Pesquisar medicamento",
   placeholder = "Buscar medicamento por princípio ativo, nome ou apresentação",
   onSelect,
   onClear,
@@ -26,6 +29,9 @@ export default function BuscaMedicamento({
   return (
     <BuscaBase
       label={label}
+      id={id}
+      name={name}
+      ariaLabel={ariaLabel}
       endpoint={endpoint}
       placeholder={placeholder}
       normalizeResults={normalizar}

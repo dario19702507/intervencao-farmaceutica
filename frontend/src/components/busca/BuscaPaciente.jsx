@@ -17,6 +17,9 @@ export default function BuscaPaciente({
   tipo = "clinico",
   endpoint,
   label = "Paciente",
+  id,
+  name,
+  ariaLabel = "Pesquisar paciente",
   placeholder = "Buscar por nome, CPF, CNS ou telefone",
   onSelect,
   onClear,
@@ -33,6 +36,9 @@ export default function BuscaPaciente({
   return (
     <BuscaBase
       label={label}
+      id={id}
+      name={name}
+      ariaLabel={ariaLabel}
       endpoint={endpointFinal}
       placeholder={placeholder}
       normalizeResults={normalizar}

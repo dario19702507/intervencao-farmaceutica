@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { api } from "../../api/api";
 import "./busca.css";
 
@@ -13,6 +13,9 @@ function defaultNormalize(payload) {
 
 export default function BuscaBase({
   label,
+  id,
+  name,
+  ariaLabel,
   placeholder = "Digite para buscar...",
   endpoint,
   minChars = 3,
@@ -36,6 +39,11 @@ export default function BuscaBase({
   const [erro, setErro] = useState("");
   const [selecionado, setSelecionado] = useState(selectedLabel || "");
   const reqId = useRef(0);
+  const reactId = useId();
+  const inputId = id || `busca-${reactId.replace(/:/g, "")}`;
+  const inputName = name || inputId;
+  const listboxId = `${inputId}-resultados`;
+  const labelTexto = ariaLabel || label || placeholder || "Campo de busca";
 
   useEffect(() => {
     setSelecionado(selectedLabel || "");
@@ -99,21 +107,33 @@ export default function BuscaBase({
 
   return (
     <div className={`busca-base ${className}`.trim()}>
-      {label && <label className="busca-base-label">{label}</label>}
+      {label && <label className="busca-base-label" htmlFor={inputId}>{label}</label>}
       {selecionado && (
         <div className="busca-selecionado">
           <span>{selecionado}</span>
-          <button type="button" onClick={limpar} disabled={disabled}>Trocar</button>
+          <button type="button" onClick={limpar} disabled={disabled} aria-label={`Trocar ${labelTexto}`}>Trocar</button>
         </div>
       )}
       {!selecionado && (
         <>
           <input
+            id={inputId}
+            name={inputName}
+            type="search"
             className="input busca-base-input"
             value={termo}
             disabled={disabled}
             placeholder={placeholder}
             onChange={(e) => setTermo(e.target.value)}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            aria-label={labelTexto}
+            aria-expanded={resultados.length > 0}
+            aria-controls={listboxId}
+            aria-haspopup="listbox"
+            role="combobox"
           />
           {termo && !podeBuscar && (
             <p className="muted busca-ajuda">Digite pelo menos {minChars} caracteres.</p>
@@ -124,13 +144,15 @@ export default function BuscaBase({
             <p className="muted busca-ajuda">{emptyMessage}</p>
           )}
           {resultados.length > 0 && (
-            <div className="busca-resultados">
+            <div id={listboxId} className="busca-resultados" role="listbox" aria-label={`Resultados para ${labelTexto}`}>
               {resultados.map((item) => (
                 <button
                   type="button"
                   className="busca-resultado-item"
                   key={item.id || `${getItemLabel?.(item)}-${Math.random()}`}
                   onClick={() => selecionar(item)}
+                  role="option"
+                  aria-selected="false"
                 >
                   {renderItem ? renderItem(item) : (getItemLabel ? getItemLabel(item) : item.nome || item.descricao_completa || item.farmaco)}
                 </button>
