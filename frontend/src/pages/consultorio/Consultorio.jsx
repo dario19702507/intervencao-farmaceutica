@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../api/api";
 import { ArrowLeft, UserRound } from "lucide-react";
 import CuidadoFarmaceutico from "./CuidadoFarmaceutico.jsx";
+import { BuscaPaciente, BuscaMedicamento } from "../../components/busca";
 
 export default function Consultorio({ usuario }) {
   const [pacientes, setPacientes] = useState([]);
@@ -749,6 +750,18 @@ async function carregarCatalogoMedicamentos(busca = "") {
     }));
   }
 
+  function aplicarMedicamentoCatalogoSelecionado(selecionado) {
+    if (!selecionado) return;
+    setCatalogoMedicamentos([selecionado]);
+    setNovoMedicamento((atual) => ({
+      ...atual,
+      catalogo_medicamento_id: selecionado.id,
+      nome_medicamento: selecionado.descricao_completa || selecionado.farmaco || selecionado.principio_ativo || atual.nome_medicamento,
+      dose: atual.dose || selecionado.concentracao || "",
+      via: atual.via || selecionado.via_administracao || inferirViaPorFormaFarmaceutica(selecionado.forma_farmaceutica),
+    }));
+  }
+
   function aplicarMedicamentoSubstitutoCatalogo(catalogoId) {
     const selecionado = catalogoMedicamentos.find((m) => String(m.id) === String(catalogoId));
     setMedicamentoSubstituto((atual) => ({
@@ -757,6 +770,18 @@ async function carregarCatalogoMedicamentos(busca = "") {
       nome_medicamento: selecionado?.descricao_completa || atual.nome_medicamento,
       dose: atual.dose || selecionado?.concentracao || "",
       via: atual.via || inferirViaPorFormaFarmaceutica(selecionado?.forma_farmaceutica),
+    }));
+  }
+
+  function aplicarMedicamentoSubstitutoSelecionado(selecionado) {
+    if (!selecionado) return;
+    setCatalogoMedicamentos([selecionado]);
+    setMedicamentoSubstituto((atual) => ({
+      ...atual,
+      catalogo_medicamento_id: selecionado.id,
+      nome_medicamento: selecionado.descricao_completa || selecionado.farmaco || selecionado.principio_ativo || atual.nome_medicamento,
+      dose: atual.dose || selecionado.concentracao || "",
+      via: atual.via || selecionado.via_administracao || inferirViaPorFormaFarmaceutica(selecionado.forma_farmaceutica),
     }));
   }
 
@@ -2070,35 +2095,13 @@ async function concluirPlanoCuidado(plano) {
               {mostrarFormularioMedicamento && (
 
                 <div className="nested-form">
-                  <div className="form-grid">
-                    <input
-                      className="input"
-                      placeholder="Buscar no catálogo"
-                      value={buscaCatalogoMedicamento}
-                      onChange={(e) => setBuscaCatalogoMedicamento(e.target.value)}
-                      onBlur={() => carregarCatalogoMedicamentos(buscaCatalogoMedicamento)}
-                    />
-                    <button
-                      className="secondary-button"
-                      type="button"
-                      onClick={() => carregarCatalogoMedicamentos(buscaCatalogoMedicamento)}
-                    >
-                      Buscar
-                    </button>
-                  </div>
-
-                  <select
-                    className="input"
-                    value={novoMedicamento.catalogo_medicamento_id}
-                    onChange={(e) => aplicarMedicamentoCatalogo(e.target.value)}
-                  >
-                    <option value="">Selecionar medicamento do catálogo</option>
-                    {catalogoMedicamentos.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.descricao_completa || `${m.farmaco} ${m.concentracao || ""}`}
-                      </option>
-                    ))}
-                  </select>
+                  <BuscaMedicamento
+                    label="Buscar medicamento no catálogo"
+                    endpoint="/medicamentos/buscar"
+                    selectedLabel={novoMedicamento.catalogo_medicamento_id ? novoMedicamento.nome_medicamento : ""}
+                    onSelect={aplicarMedicamentoCatalogoSelecionado}
+                    onClear={() => setNovoMedicamento((atual) => ({ ...atual, catalogo_medicamento_id: "", nome_medicamento: "" }))}
+                  />
 
                   <input
                     className="input"
@@ -2270,26 +2273,13 @@ async function concluirPlanoCuidado(plano) {
 
                   {acaoCicloVidaMedicamento === "TROCAR" && (
                     <>
-                      <div className="form-grid">
-                        <input
-                          className="input"
-                          placeholder="Buscar substituto no catálogo"
-                          value={buscaCatalogoMedicamentoSubstituto}
-                          onChange={(e) => setBuscaCatalogoMedicamentoSubstituto(e.target.value)}
-                        />
-                        <select
-                          className="input"
-                          value={medicamentoSubstituto.catalogo_medicamento_id}
-                          onChange={(e) => aplicarMedicamentoSubstitutoCatalogo(e.target.value)}
-                        >
-                          <option value="">Selecione o substituto no catálogo</option>
-                          {catalogoMedicamentos.map((m) => (
-                            <option key={m.id} value={m.id}>
-                              {m.descricao_completa || `${m.farmaco || m.principio_ativo || "Medicamento"} ${m.apresentacao || ""}`}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      <BuscaMedicamento
+                        label="Buscar substituto no catálogo"
+                        endpoint="/medicamentos/buscar"
+                        selectedLabel={medicamentoSubstituto.catalogo_medicamento_id ? medicamentoSubstituto.nome_medicamento : ""}
+                        onSelect={aplicarMedicamentoSubstitutoSelecionado}
+                        onClear={() => setMedicamentoSubstituto((atual) => ({ ...atual, catalogo_medicamento_id: "", nome_medicamento: "" }))}
+                      />
 
                       <div className="form-grid">
                         <input
@@ -3871,34 +3861,20 @@ async function concluirPlanoCuidado(plano) {
           </div>
 
           <div className="filters-row">
-            <label className="full-width-label">
-              Buscar paciente
-              <input
-                value={buscaPacienteProntuario}
-                onChange={(e) => setBuscaPacienteProntuario(e.target.value)}
-                placeholder="Digite nome, CPF, CNS ou telefone"
-              />
-            </label>
-
-            <div className="action-buttons">
-              <button
-                className="primary-button"
-                onClick={() => buscarPacientesProntuario()}
-                disabled={loading || buscaPacienteProntuario.trim().length < 3}
-              >
-                Buscar
-              </button>
-              <button
-                className="secondary-button"
-                onClick={() => {
-                  setBuscaPacienteProntuario("");
-                  setPacientes([]);
-                  setBuscaPacientesRealizada(false);
-                }}
-              >
-                Limpar
-              </button>
-            </div>
+            <BuscaPaciente
+              label="Buscar paciente"
+              placeholder="Digite nome, CPF, CNS ou telefone"
+              onSelect={(paciente) => {
+                setPacientes([paciente]);
+                setBuscaPacientesRealizada(true);
+                abrirProntuario(paciente);
+              }}
+              onClear={() => {
+                setBuscaPacienteProntuario("");
+                setPacientes([]);
+                setBuscaPacientesRealizada(false);
+              }}
+            />
           </div>
 
           {loading ? (

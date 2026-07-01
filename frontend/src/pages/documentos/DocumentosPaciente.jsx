@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api/api";
-import BuscaPacienteClinico from "../../components/BuscaPacienteClinico";
 import "./DocumentosPaciente.css";
+import { BuscaPaciente } from "../../components/busca";
 
 const estadoInicialUpload = {
   paciente_id: "",
@@ -87,8 +87,10 @@ function preencherDataInput(valor) {
 }
 
 export default function DocumentosPaciente() {
-  const [pacienteAtual, setPacienteAtual] = useState(null);
+  const [pacientes, setPacientes] = useState([]);
   const [pacienteSelecionado, setPacienteSelecionado] = useState("");
+  const [buscaPaciente, setBuscaPaciente] = useState("");
+  const [buscandoPacientes, setBuscandoPacientes] = useState(false);
   const [documentos, setDocumentos] = useState([]);
   const [dashboard, setDashboard] = useState(null);
   const [vencimentos, setVencimentos] = useState([]);
@@ -108,6 +110,10 @@ export default function DocumentosPaciente() {
   const [documentoHistorico, setDocumentoHistorico] = useState(null);
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
 
+  const pacienteAtual = useMemo(
+    () => pacientes.find((p) => String(p.id) === String(pacienteSelecionado)),
+    [pacientes, pacienteSelecionado]
+  );
 
   async function carregarBase() {
     setLoading(true);
@@ -120,6 +126,7 @@ export default function DocumentosPaciente() {
   ]);
 
   setOpcoes(opcoesResp.data || opcoes);
+  setPacientes([]);
   setDashboard(dashboardResp.data || null);
   setVencimentos(normalizarDocumentos(vencimentosResp.data));
     } catch (e) {
@@ -127,6 +134,35 @@ export default function DocumentosPaciente() {
       setErro("Não foi possível carregar a gestão documental. Verifique se o backend está ativo.");
     } finally {
       setLoading(false);
+    }
+  }
+
+    async function buscarPacientesClinicos(termo) {
+      const busca = (termo || "").trim();
+
+      setBuscaPaciente(termo);
+
+      if (busca.length < 3) {
+        setPacientes([]);
+        return;
+      }
+
+      try {
+        setBuscandoPacientes(true);
+
+      const response = await api.get("/consultorio/pacientes-clinicos/buscar", {
+        params: {
+          termo: busca,
+          limit: 30,
+        },
+      });
+
+      setPacientes(normalizarPacientes(response.data));
+    } catch (error) {
+      console.warn("Erro ao buscar pacientes clínicos.", error.response?.data || error);
+      setPacientes([]);
+    } finally {
+      setBuscandoPacientes(false);
     }
   }
 
@@ -157,9 +193,7 @@ export default function DocumentosPaciente() {
     setForm((atual) => ({ ...atual, [campo]: valor }));
   }
 
-  function selecionarPaciente(paciente) {
-    const id = paciente?.id ? String(paciente.id) : "";
-    setPacienteAtual(paciente || null);
+  function selecionarPaciente(id) {
     setPacienteSelecionado(id);
     setForm((atual) => ({ ...atual, paciente_id: id }));
   }
@@ -360,15 +394,14 @@ export default function DocumentosPaciente() {
         </div>
 
         <form className="upload-form" onSubmit={enviarDocumento}>
-          <div className="wide">
-            <BuscaPacienteClinico
+          <label className="wide">
+            <BuscaPaciente
               label="Paciente"
-              value={form.paciente_id}
-              selectedPaciente={pacienteAtual}
-              onSelect={selecionarPaciente}
-              required
+              selectedLabel={pacienteAtual ? (pacienteAtual.nome || pacienteAtual.nome_completo || `Paciente ${pacienteAtual.id}`) : ""}
+              onSelect={(paciente) => selecionarPaciente(paciente.id)}
+              onClear={() => selecionarPaciente("")}
             />
-          </div>
+          </label>
 
           <label>
             Tipo
@@ -419,11 +452,11 @@ export default function DocumentosPaciente() {
             <h2>Documentos do paciente</h2>
             <span>{pacienteAtual ? (pacienteAtual.nome || pacienteAtual.nome_completo) : "Selecione um paciente para visualizar"}</span>
           </div>
-          <BuscaPacienteClinico
+          <BuscaPaciente
             label="Selecionar paciente"
-            value={pacienteSelecionado}
-            selectedPaciente={pacienteAtual}
-            onSelect={selecionarPaciente}
+            selectedLabel={pacienteAtual ? (pacienteAtual.nome || pacienteAtual.nome_completo || `Paciente ${pacienteAtual.id}`) : ""}
+            onSelect={(paciente) => selecionarPaciente(paciente.id)}
+            onClear={() => selecionarPaciente("")}
           />
         </div>
 
