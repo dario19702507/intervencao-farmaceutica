@@ -45,7 +45,7 @@ export default function AgendaIntegrada() {
 
   function gerarParametrosPeriodo(periodo) {
     const params = {
-      limit: 150,
+      limit: 80,
       offset: 0,
       somente_ativos: filtroStatus !== "todos",
     };

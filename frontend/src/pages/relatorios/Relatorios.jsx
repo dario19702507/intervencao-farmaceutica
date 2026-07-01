@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../api/api";
+import BuscaPacienteClinico from "../../components/BuscaPacienteClinico";
 
 function abrirPdfAutenticado(url, nomeArquivo = "documento.pdf") {
   return api.get(url, { responseType: "blob" }).then((resp) => {
@@ -31,31 +32,16 @@ function normalizarNomeArquivo(texto) {
 
 export default function Relatorios() {
   const navigate = useNavigate();
-  const [pacientes, setPacientes] = useState([]);
+  const [pacienteSelecionado, setPacienteSelecionado] = useState(null);
   const [pacienteId, setPacienteId] = useState("");
   const [atendimentoRapidoId, setAtendimentoRapidoId] = useState("");
   const [bioimpedanciaId, setBioimpedanciaId] = useState("");
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
 
-  const pacienteSelecionado = useMemo(
-    () => pacientes.find((p) => String(p.id) === String(pacienteId)),
-    [pacientes, pacienteId]
-  );
-
-  useEffect(() => {
-    carregarPacientes();
-  }, []);
-
-  async function carregarPacientes() {
-    try {
-      const response = await api.get("/consultorio/pacientes-clinicos");
-      const lista = response.data?.pacientes || [];
-      setPacientes(lista);
-      if (!pacienteId && lista.length) setPacienteId(String(lista[0].id));
-    } catch (error) {
-      console.warn("Não foi possível carregar pacientes clínicos para impressão.", error.response?.data || error);
-    }
+  function selecionarPaciente(paciente) {
+    setPacienteSelecionado(paciente || null);
+    setPacienteId(paciente?.id ? String(paciente.id) : "");
   }
 
   async function abrir(url, nomeArquivo) {
@@ -104,15 +90,14 @@ export default function Relatorios() {
           </div>
         </div>
 
-        <label className="print-field-full">
-          Paciente clínico
-          <select className="input" value={pacienteId} onChange={(e) => setPacienteId(e.target.value)}>
-            <option value="">Selecione um paciente</option>
-            {pacientes.map((p) => (
-              <option key={p.id} value={p.id}>{p.nome} {p.cpf ? `· CPF ${p.cpf}` : ""}</option>
-            ))}
-          </select>
-        </label>
+        <div className="print-field-full">
+          <BuscaPacienteClinico
+            label="Paciente clínico"
+            value={pacienteId}
+            selectedPaciente={pacienteSelecionado}
+            onSelect={selecionarPaciente}
+          />
+        </div>
 
         <div className="print-actions-grid">
           <div className="print-action-card">

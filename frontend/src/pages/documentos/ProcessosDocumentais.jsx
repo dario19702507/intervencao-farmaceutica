@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api/api";
+import BuscaPacienteClinico from "../../components/BuscaPacienteClinico";
 import "./ProcessosDocumentais.css";
 
 const processoInicial = {
@@ -61,7 +62,7 @@ function arquivoParaItem(file, tipoPadrao = "LAUDO") {
 }
 
 export default function ProcessosDocumentais() {
-  const [pacientes, setPacientes] = useState([]);
+  const [pacienteSelecionado, setPacienteSelecionado] = useState(null);
   const [opcoes, setOpcoes] = useState({
     tipos_processo: ["INCLUSAO", "RENOVACAO", "ADEQUACAO", "ENCERRAMENTO"],
     situacoes: ["EM_MONTAGEM", "AGUARDANDO_DOCUMENTOS", "PRONTO_PARA_ENVIO", "ENVIADO", "DEFERIDO", "INDEFERIDO", "ENCERRADO"],
@@ -85,10 +86,6 @@ export default function ProcessosDocumentais() {
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
 
-  const pacienteSelecionado = useMemo(
-    () => pacientes.find((p) => String(p.id) === String(formProcesso.paciente_id)),
-    [pacientes, formProcesso.paciente_id]
-  );
 
   const processoSelecionado = processoDetalhe?.id ? processoDetalhe : processos.find((p) => String(p.id) === String(processoSelecionadoId));
 
@@ -100,22 +97,16 @@ export default function ProcessosDocumentais() {
     setLoading(true);
     setErro("");
     try {
-      const [pacientesResp, opcoesResp, docsOpcoesResp, dashboardResp, completudeResp] = await Promise.all([
-        api.get("/consultorio/pacientes-clinicos"),
+      const [opcoesResp, docsOpcoesResp, dashboardResp, completudeResp] = await Promise.all([
         api.get("/consultorio/processos-documentais/opcoes"),
         api.get("/consultorio/documentos/opcoes"),
         api.get("/consultorio/processos-documentais/dashboard"),
         api.get("/consultorio/processos-documentais/completude-dashboard"),
       ]);
-      const listaPacientes = normalizarPacientes(pacientesResp.data);
-      setPacientes(listaPacientes);
       setOpcoes(opcoesResp.data || opcoes);
       setOpcoesDocumentos(docsOpcoesResp.data || opcoesDocumentos);
       setDashboard(dashboardResp.data || null);
       setCompletudeDashboard(completudeResp.data || null);
-      if (!formProcesso.paciente_id && listaPacientes.length > 0) {
-        setFormProcesso((atual) => ({ ...atual, paciente_id: String(listaPacientes[0].id) }));
-      }
     } catch (e) {
       console.error(e);
       setErro("Não foi possível carregar os processos documentais. Verifique se o backend está ativo.");
@@ -175,6 +166,17 @@ export default function ProcessosDocumentais() {
     setSugestoesPreenchimento(null);
     setCamposSelecionados([]);
   }, [processoSelecionadoId]);
+
+  function selecionarPaciente(paciente) {
+    const id = paciente?.id ? String(paciente.id) : "";
+    setPacienteSelecionado(paciente || null);
+    setFormProcesso((atual) => ({ ...atual, paciente_id: id }));
+    if (!id) {
+      setProcessos([]);
+      setProcessoSelecionadoId("");
+      setProcessoDetalhe(null);
+    }
+  }
 
   function alterarProcesso(campo, valor) {
     setFormProcesso((atual) => ({ ...atual, [campo]: valor }));
@@ -493,15 +495,15 @@ export default function ProcessosDocumentais() {
         <div className="panel">
           <h2>Novo pacote documental</h2>
           <form onSubmit={criarProcesso} className="form-grid">
-            <label>
-              Paciente clínico
-              <select value={formProcesso.paciente_id} onChange={(e) => alterarProcesso("paciente_id", e.target.value)} required>
-                <option value="">Selecione</option>
-                {pacientes.map((p) => (
-                  <option key={p.id} value={p.id}>{nomePaciente(p)}</option>
-                ))}
-              </select>
-            </label>
+            <div className="span-2">
+              <BuscaPacienteClinico
+                label="Paciente clínico"
+                value={formProcesso.paciente_id}
+                selectedPaciente={pacienteSelecionado}
+                onSelect={selecionarPaciente}
+                required
+              />
+            </div>
             <label>
               Ação
               <select value={formProcesso.tipo_processo} onChange={(e) => alterarProcesso("tipo_processo", e.target.value)}>

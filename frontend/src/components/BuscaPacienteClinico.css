@@ -1,0 +1,76 @@
+.busca-paciente-clinico {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.busca-paciente-label {
+  font-weight: 600;
+}
+
+.busca-paciente-input-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.busca-paciente-input-row .busca-paciente-input {
+  flex: 1;
+}
+
+.busca-paciente-clear {
+  white-space: nowrap;
+}
+
+.busca-paciente-ajuda,
+.busca-paciente-selecionado {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.875rem;
+}
+
+.busca-paciente-erro {
+  margin: 0;
+  color: #b91c1c;
+  font-size: 0.875rem;
+}
+
+.busca-paciente-resultados {
+  border: 1px solid #dbe3ef;
+  border-radius: 0.75rem;
+  background: #fff;
+  overflow: hidden;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.busca-paciente-resultado {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid #edf2f7;
+  background: #fff;
+  padding: 0.75rem 0.9rem;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.busca-paciente-resultado:last-child {
+  border-bottom: 0;
+}
+
+.busca-paciente-resultado:hover {
+  background: #f8fafc;
+}
+
+.busca-paciente-resultado span {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.busca-paciente-resultado small {
+  color: #64748b;
+}

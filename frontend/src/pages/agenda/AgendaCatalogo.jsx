@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api/api";
+import BuscaPacienteClinico from "../../components/BuscaPacienteClinico";
 import "./AgendaCatalogo.css";
 
 const vazioEvento = {
@@ -55,7 +56,7 @@ export default function AgendaCatalogo() {
   const [dashboard, setDashboard] = useState(null);
   const [eventos, setEventos] = useState([]);
   const [medicamentos, setMedicamentos] = useState([]);
-  const [pacientes, setPacientes] = useState([]);
+  const [pacienteSelecionado, setPacienteSelecionado] = useState(null);
 
   const [filtrosAgenda, setFiltrosAgenda] = useState({ status: "", data_inicio: "", data_fim: "" });
   const [buscaMedicamento, setBuscaMedicamento] = useState("");
@@ -68,7 +69,7 @@ export default function AgendaCatalogo() {
     setLoading(true);
     setErro("");
     try {
-      const [opcoesResp, dashboardResp, agendaResp, medsResp, pacientesResp] = await Promise.all([
+      const [opcoesResp, dashboardResp, agendaResp, medsResp] = await Promise.all([
         api.get("/consultorio/agenda/opcoes"),
         api.get("/consultorio/agenda/dashboard"),
         api.get("/consultorio/agenda", {
@@ -77,14 +78,12 @@ export default function AgendaCatalogo() {
           ),
         }),
         api.get("/consultorio/catalogo-medicamentos", { params: { busca: buscaMedicamento || undefined, ativo: true } }),
-        api.get("/consultorio/pacientes-clinicos"),
       ]);
 
       setOpcoes(opcoesResp.data || opcoes);
       setDashboard(dashboardResp.data || null);
       setEventos(agendaResp.data?.eventos || []);
       setMedicamentos(medsResp.data?.medicamentos || []);
-      setPacientes(normalizarListaPacientes(pacientesResp.data));
     } catch (e) {
       console.error(e);
       setErro("Não foi possível carregar Agenda/Catálogo. Verifique se o backend está ativo.");
@@ -116,13 +115,14 @@ export default function AgendaCatalogo() {
     }
   }
 
-  function selecionarPaciente(id) {
-    const selecionado = pacientes.find((p) => String(p.id) === String(id));
+  function selecionarPaciente(paciente) {
+    const id = paciente?.id ? String(paciente.id) : "";
+    setPacienteSelecionado(paciente || null);
     setEvento((atual) => ({
       ...atual,
       paciente_id: id,
-      paciente_nome: selecionado?.nome || selecionado?.paciente_nome || atual.paciente_nome,
-      telefone: selecionado?.telefone || selecionado?.telefone_principal || atual.telefone,
+      paciente_nome: paciente?.nome || paciente?.paciente_nome || atual.paciente_nome,
+      telefone: paciente?.telefone || paciente?.telefone_principal || atual.telefone,
     }));
   }
 
@@ -260,15 +260,14 @@ export default function AgendaCatalogo() {
           <section className="panel-card">
             <h3>Novo evento</h3>
             <form className="form-grid" onSubmit={criarEvento}>
-              <label>
-                Paciente clínico
-                <select value={evento.paciente_id} onChange={(e) => selecionarPaciente(e.target.value)}>
-                  <option value="">Selecionar da lista ou digitar abaixo</option>
-                  {pacientes.map((p) => (
-                    <option key={p.id} value={p.id}>{p.nome || p.paciente_nome || `Paciente ${p.id}`}</option>
-                  ))}
-                </select>
-              </label>
+              <div className="full">
+                <BuscaPacienteClinico
+                  label="Paciente clínico"
+                  value={evento.paciente_id}
+                  selectedPaciente={pacienteSelecionado}
+                  onSelect={selecionarPaciente}
+                />
+              </div>
               <label>
                 Nome do paciente *
                 <input value={evento.paciente_nome} onChange={(e) => setEvento({ ...evento, paciente_nome: e.target.value })} />

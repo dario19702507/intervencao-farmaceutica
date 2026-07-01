@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api/api";
+import BuscaPacienteClinico from "../../components/BuscaPacienteClinico";
 import "./OCRDocumental.css";
 
 function normalizarPacientes(payload) {
@@ -71,7 +72,7 @@ function classificacaoManual(extracao) {
 }
 
 export default function OCRDocumental() {
-  const [pacientes, setPacientes] = useState([]);
+  const [pacienteSelecionado, setPacienteSelecionado] = useState(null);
   const [pacienteId, setPacienteId] = useState("");
   const [processos, setProcessos] = useState([]);
   const [processoId, setProcessoId] = useState("");
@@ -94,10 +95,6 @@ export default function OCRDocumental() {
     return extracoesProcesso.find((item) => String(item.id) === String(extracaoSelecionadaId)) || null;
   }, [extracoesProcesso, extracaoSelecionadaId]);
 
-  const pacienteSelecionado = useMemo(
-    () => pacientes.find((p) => String(p.id) === String(pacienteId)),
-    [pacientes, pacienteId]
-  );
 
   const ultimaExtracaoPorDocumento = useMemo(() => {
     const mapa = new Map();
@@ -113,22 +110,25 @@ export default function OCRDocumental() {
     setLoading(true);
     setErro("");
     try {
-      const [pacientesResp, opcoesResp] = await Promise.all([
-        api.get("/consultorio/pacientes-clinicos"),
-        api.get("/consultorio/documentos/ocr/opcoes"),
-      ]);
-      const lista = normalizarPacientes(pacientesResp.data);
-      setPacientes(lista);
+      const opcoesResp = await api.get("/consultorio/documentos/ocr/opcoes");
       setOpcoes(opcoesResp.data || null);
-      if (!pacienteId && lista.length > 0) {
-        setPacienteId(String(lista[0].id));
-      }
     } catch (e) {
       console.error(e);
       setErro("Não foi possível carregar a base do OCR. Verifique se o backend está ativo.");
     } finally {
       setLoading(false);
     }
+  }
+
+  function selecionarPaciente(paciente) {
+    setPacienteSelecionado(paciente || null);
+    setPacienteId(paciente?.id ? String(paciente.id) : "");
+    setProcessos([]);
+    setProcessoId("");
+    setProcessoDetalhe(null);
+    setDocumentosProcesso([]);
+    setExtracoesProcesso([]);
+    setExtracaoSelecionadaId("");
   }
 
   async function carregarProcessosDoPaciente(idPaciente) {
@@ -272,15 +272,13 @@ export default function OCRDocumental() {
 
       <section className="ocr-grid controls">
         <div className="ocr-card">
-          <label>Paciente</label>
-          <select value={pacienteId} onChange={(e) => setPacienteId(e.target.value)} disabled={loading}>
-            {pacientes.map((paciente) => (
-              <option key={paciente.id} value={paciente.id}>{nomePaciente(paciente)}</option>
-            ))}
-          </select>
-          {pacienteSelecionado && (
-            <small>Paciente selecionado: {nomePaciente(pacienteSelecionado)}</small>
-          )}
+          <BuscaPacienteClinico
+            label="Paciente"
+            value={pacienteId}
+            selectedPaciente={pacienteSelecionado}
+            onSelect={selecionarPaciente}
+            disabled={loading}
+          />
         </div>
 
         <div className="ocr-card">
