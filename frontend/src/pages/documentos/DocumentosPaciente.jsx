@@ -88,6 +88,8 @@ function preencherDataInput(valor) {
 export default function DocumentosPaciente() {
   const [pacientes, setPacientes] = useState([]);
   const [pacienteSelecionado, setPacienteSelecionado] = useState("");
+  const [buscaPaciente, setBuscaPaciente] = useState("");
+  const [buscandoPacientes, setBuscandoPacientes] = useState(false);
   const [documentos, setDocumentos] = useState([]);
   const [dashboard, setDashboard] = useState(null);
   const [vencimentos, setVencimentos] = useState([]);
@@ -116,22 +118,50 @@ export default function DocumentosPaciente() {
     setLoading(true);
     setErro("");
     try {
-      const [opcoesResp, pacientesResp, dashboardResp, vencimentosResp] = await Promise.all([
-        api.get("/consultorio/documentos/opcoes"),
-        api.get("/consultorio/pacientes-clinicos"),
-        api.get("/consultorio/documentos/validade-dashboard"),
-        api.get("/consultorio/documentos/vencimentos"),
-      ]);
-      setOpcoes(opcoesResp.data || opcoes);
-      const listaPacientes = normalizarPacientes(pacientesResp.data);
-      setPacientes(listaPacientes);
-      setDashboard(dashboardResp.data || null);
-      setVencimentos(normalizarDocumentos(vencimentosResp.data));
+  const [opcoesResp, dashboardResp, vencimentosResp] = await Promise.all([
+    api.get("/consultorio/documentos/opcoes"),
+    api.get("/consultorio/documentos/validade-dashboard"),
+    api.get("/consultorio/documentos/vencimentos"),
+  ]);
+
+  setOpcoes(opcoesResp.data || opcoes);
+  setPacientes([]);
+  setDashboard(dashboardResp.data || null);
+  setVencimentos(normalizarDocumentos(vencimentosResp.data));
     } catch (e) {
       console.error(e);
       setErro("Não foi possível carregar a gestão documental. Verifique se o backend está ativo.");
     } finally {
       setLoading(false);
+    }
+  }
+
+    async function buscarPacientesClinicos(termo) {
+      const busca = (termo || "").trim();
+
+      setBuscaPaciente(termo);
+
+      if (busca.length < 3) {
+        setPacientes([]);
+        return;
+      }
+
+      try {
+        setBuscandoPacientes(true);
+
+      const response = await api.get("/consultorio/pacientes-clinicos/buscar", {
+        params: {
+          termo: busca,
+          limit: 30,
+        },
+      });
+
+      setPacientes(normalizarPacientes(response.data));
+    } catch (error) {
+      console.warn("Erro ao buscar pacientes clínicos.", error.response?.data || error);
+      setPacientes([]);
+    } finally {
+      setBuscandoPacientes(false);
     }
   }
 
@@ -420,6 +450,13 @@ export default function DocumentosPaciente() {
             <h2>Documentos do paciente</h2>
             <span>{pacienteAtual ? (pacienteAtual.nome || pacienteAtual.nome_completo) : "Selecione um paciente para visualizar"}</span>
           </div>
+            <input
+              className="input"
+              placeholder="Buscar paciente por nome, CPF ou CNS"
+              value={buscaPaciente}
+              onChange={(e) => buscarPacientesClinicos(e.target.value)}
+            />
+            {buscandoPacientes && <p className="muted">Buscando pacientes...</p>}
           <select value={pacienteSelecionado} onChange={(e) => selecionarPaciente(e.target.value)}>
             <option value="">Selecionar paciente</option>
             {pacientes.map((p) => <option key={p.id} value={p.id}>{p.nome || p.nome_completo || `Paciente ${p.id}`}</option>)}
