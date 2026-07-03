@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api/api";
 import BuscaPacienteClinico from "../../components/BuscaPacienteClinico";
+import { BuscaMedicamento } from "../../components/busca";
 import "./AgendaCatalogo.css";
 
 const vazioEvento = {
@@ -62,6 +63,7 @@ export default function AgendaCatalogo() {
   const [buscaMedicamento, setBuscaMedicamento] = useState("");
 
   const [evento, setEvento] = useState(vazioEvento);
+  const [medicamentoAgendaSelecionado, setMedicamentoAgendaSelecionado] = useState("");
   const [medicamento, setMedicamento] = useState(vazioMedicamento);
   const [medicamentoEditandoId, setMedicamentoEditandoId] = useState(null);
 
@@ -149,6 +151,7 @@ export default function AgendaCatalogo() {
       await api.post("/consultorio/agenda", payload);
       setMensagem("Evento criado com sucesso.");
       setEvento(vazioEvento);
+      setMedicamentoAgendaSelecionado("");
       await carregarTudo();
     } catch (err) {
       console.error(err);
@@ -294,12 +297,23 @@ export default function AgendaCatalogo() {
               </label>
               <label className="full">
                 Medicamento padronizado
-                <select value={evento.medicamento_id} onChange={(e) => setEvento({ ...evento, medicamento_id: e.target.value })}>
-                  <option value="">Sem vínculo específico</option>
-                  {medicamentos.map((m) => (
-                    <option key={m.id} value={m.id}>{m.descricao_completa}</option>
-                  ))}
-                </select>
+                <BuscaMedicamento
+                  id="agenda-catalogo-medicamento"
+                  name="agenda_catalogo_medicamento"
+                  label=""
+                  selectedLabel={medicamentoAgendaSelecionado}
+                  endpoint="/consultorio/catalogo-medicamentos"
+                  onSelect={(med) => {
+                    const descricao = med.descricao_completa
+                      || [med.farmaco || med.principio_ativo || med.nome_comercial, med.concentracao, med.forma_farmaceutica].filter(Boolean).join(" · ");
+                    setEvento((atual) => ({ ...atual, medicamento_id: med.id || "" }));
+                    setMedicamentoAgendaSelecionado(descricao || "Medicamento selecionado");
+                  }}
+                  onClear={() => {
+                    setEvento((atual) => ({ ...atual, medicamento_id: "" }));
+                    setMedicamentoAgendaSelecionado("");
+                  }}
+                />
               </label>
               <label>
                 Início da vigência

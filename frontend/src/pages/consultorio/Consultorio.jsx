@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../api/api";
 import { ArrowLeft, UserRound } from "lucide-react";
 import CuidadoFarmaceutico from "./CuidadoFarmaceutico.jsx";
-import { BuscaPaciente, BuscaMedicamento } from "../../components/busca";
+import { BuscaPaciente, BuscaMedicamento, BuscaMedicamentoUso } from "../../components/busca";
 
 export default function Consultorio({ usuario }) {
   const [pacientes, setPacientes] = useState([]);
@@ -2597,23 +2597,21 @@ async function concluirPlanoCuidado(plano) {
 
               {mostrarFormularioIntervencao && (
                 <div className="nested-form">
-                  <select
-                    className="input"
+                  <BuscaMedicamentoUso
+                    id="intervencao-medicamento-uso"
+                    name="intervencaoMedicamentoUso"
+                    label="Medicamento relacionado à intervenção"
+                    placeholder="Buscar medicamento em uso do paciente"
+                    medicamentos={medicamentos}
                     value={novaIntervencao.medicamento_uso_id}
-                    onChange={(e) =>
+                    onSelect={(medicamento) =>
                       setNovaIntervencao({
                         ...novaIntervencao,
-                        medicamento_uso_id: e.target.value,
+                        medicamento_uso_id: medicamento?.id || "",
                       })
                     }
-                  >
-                    <option value="">Vincular a medicamento específico?</option>
-                    {medicamentos.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.nome_medicamento}
-                      </option>
-                    ))}
-                  </select>
+                    ajuda="Digite ao menos 2 caracteres para localizar medicamento já registrado na farmacoterapia."
+                  />
 
                   <select
                     className="input"

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api/api";
 import "./AgendaIntegrada.css";
 import CentralNotificacoes from "./CentralNotificacoes";
+import { BuscaMedicamento } from "../../components/busca";
 
 export default function AgendaIntegrada() {
   const [eventos, setEventos] = useState([]);
@@ -836,13 +837,29 @@ export default function AgendaIntegrada() {
             </label>
 
             <label>
-              Medicamento
+              Medicamento padronizado
+              <BuscaMedicamento
+                id="agenda-medicamento"
+                name="agenda_medicamento"
+                label=""
+                selectedLabel={novoEvento.medicamento || ""}
+                onSelect={(medicamento) => {
+                  const descricao = medicamento.descricao_completa
+                    || [medicamento.farmaco || medicamento.principio_ativo || medicamento.nome_comercial, medicamento.concentracao, medicamento.forma_farmaceutica].filter(Boolean).join(" · ");
+                  setNovoEvento((atual) => ({
+                    ...atual,
+                    medicamento_id: medicamento.id || atual.medicamento_id,
+                    medicamento: descricao || atual.medicamento,
+                  }));
+                }}
+                onClear={() => setNovoEvento((atual) => ({ ...atual, medicamento_id: "", medicamento: "" }))}
+              />
               <input
                 value={novoEvento.medicamento}
                 onChange={(e) =>
-                  setNovoEvento({ ...novoEvento, medicamento: e.target.value })
+                  setNovoEvento({ ...novoEvento, medicamento: e.target.value, medicamento_id: "" })
                 }
-                placeholder="Medicamento"
+                placeholder="Ou descreva manualmente o medicamento"
               />
             </label>
 
