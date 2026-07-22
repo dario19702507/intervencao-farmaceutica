@@ -2488,6 +2488,43 @@ def resolver_alerta_clinico(
 ):
     return svc_resolver_alerta_clinico(dados=dados, db=db, current=current)
 
+@router.get("/me/perfil-profissional")
+def obter_perfil_profissional(
+    current=Depends(get_current_user_consultorio)
+):
+    return {
+        "id": current.id,
+        "nome": current.nome,
+        "email": current.email,
+        "perfil": getattr(current, "perfil", None),
+    }
+
+
+@router.put("/me/perfil-profissional")
+def atualizar_perfil_profissional(
+    dados: dict,
+    db: Session = Depends(get_db_consultorio),
+    current=Depends(get_current_user_consultorio)
+):
+    campos_permitidos = ["nome", "perfil"]
+
+    for campo in campos_permitidos:
+        if campo in dados:
+            setattr(current, campo, dados.get(campo))
+
+    db.commit()
+    db.refresh(current)
+
+    return {
+        "mensagem": "Perfil profissional atualizado com sucesso.",
+        "usuario": {
+            "id": current.id,
+            "nome": current.nome,
+            "email": current.email,
+            "perfil": getattr(current, "perfil", None),
+        }
+    }
+
 @router.get("/alertas-clinicos/resolucoes")
 def listar_resolucoes_alertas_clinicos(
     db: Session = Depends(get_db_consultorio),
