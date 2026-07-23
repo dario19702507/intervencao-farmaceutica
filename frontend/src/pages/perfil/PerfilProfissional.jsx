@@ -42,8 +42,6 @@ export default function PerfilProfissional() {
         assinatura_digital: perfil.assinatura_digital,
       });
 
-      await carregarPerfil();
-
       alert("Perfil profissional atualizado com sucesso.");
     } catch (error) {
       console.error("Erro ao salvar perfil:", error.response?.data || error);
