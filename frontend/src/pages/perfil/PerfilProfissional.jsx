@@ -18,7 +18,7 @@ export default function PerfilProfissional() {
 
   async function carregarPerfil() {
     try {
-      const response = await api.get("/me");
+      const response = await api.get("/consultorio/me/perfil-profissional");
 
       setPerfil({
         nome_completo: response.data.nome_completo || "",
@@ -41,6 +41,8 @@ export default function PerfilProfissional() {
         crf: perfil.crf,
         assinatura_digital: perfil.assinatura_digital,
       });
+
+      await carregarPerfil();
 
       alert("Perfil profissional atualizado com sucesso.");
     } catch (error) {

@@ -239,6 +239,15 @@ def _adicionar_coluna_se_nao_existir(tabela: str, coluna: str, tipo: str) -> Non
         pass
 
 
+def _garantir_colunas_perfil_profissional() -> None:
+    """Mantém o perfil profissional compatível em bancos já existentes."""
+    _adicionar_coluna_se_nao_existir("users", "crf", "VARCHAR")
+    _adicionar_coluna_se_nao_existir("users", "assinatura_digital", "TEXT")
+
+
+_garantir_colunas_perfil_profissional()
+
+
 def _garantir_colunas_agenda_ceaf() -> None:
     colunas = {
         "paciente_ceaf_id": "INTEGER",
@@ -2488,16 +2497,24 @@ def resolver_alerta_clinico(
 ):
     return svc_resolver_alerta_clinico(dados=dados, db=db, current=current)
 
+def _serializar_perfil_profissional(current) -> dict:
+    return {
+        "id": current.id,
+        "nome": current.nome,
+        "nome_completo": current.nome,
+        "email": current.email,
+        "perfil": getattr(current, "perfil", None),
+        "categoria_profissional": getattr(current, "categoria_profissional", None),
+        "crf": getattr(current, "crf", None),
+        "assinatura_digital": getattr(current, "assinatura_digital", None),
+    }
+
+
 @router.get("/me/perfil-profissional")
 def obter_perfil_profissional(
     current=Depends(get_current_user_consultorio)
 ):
-    return {
-        "id": current.id,
-        "nome": current.nome,
-        "email": current.email,
-        "perfil": getattr(current, "perfil", None),
-    }
+    return _serializar_perfil_profissional(current)
 
 
 @router.put("/me/perfil-profissional")
@@ -2506,23 +2523,24 @@ def atualizar_perfil_profissional(
     db: Session = Depends(get_db_consultorio),
     current=Depends(get_current_user_consultorio)
 ):
-    campos_permitidos = ["nome", "perfil"]
+    nome = dados.get("nome_completo", dados.get("nome"))
+    if nome is not None:
+        nome = str(nome).strip()
+        if not nome:
+            raise HTTPException(status_code=400, detail="O nome completo é obrigatório.")
+        current.nome = nome
 
-    for campo in campos_permitidos:
+    for campo in ("crf", "assinatura_digital"):
         if campo in dados:
-            setattr(current, campo, dados.get(campo))
+            valor = dados.get(campo)
+            setattr(current, campo, str(valor).strip() if valor else None)
 
     db.commit()
     db.refresh(current)
 
     return {
         "mensagem": "Perfil profissional atualizado com sucesso.",
-        "usuario": {
-            "id": current.id,
-            "nome": current.nome,
-            "email": current.email,
-            "perfil": getattr(current, "perfil", None),
-        }
+        "usuario": _serializar_perfil_profissional(current),
     }
 
 @router.get("/alertas-clinicos/resolucoes")

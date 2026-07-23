@@ -379,6 +379,8 @@ class UserConsultorio(BaseConsultorio):
     hashed_password = Column(String, nullable=False)
     perfil = Column(String, nullable=True)
     categoria_profissional = Column(String, nullable=True)
+    crf = Column(String, nullable=True)
+    assinatura_digital = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class ResolucaoAlertaClinico(BaseConsultorio):

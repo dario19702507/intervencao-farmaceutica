@@ -27,6 +27,8 @@ def aplicar_migracoes_simples() -> None:
             "users",
             "categoria_profissional VARCHAR DEFAULT 'Farmacêutico'",
         )
+        _adicionar_coluna_se_nao_existir(conn, "users", "crf VARCHAR")
+        _adicionar_coluna_se_nao_existir(conn, "users", "assinatura_digital TEXT")
         _adicionar_coluna_se_nao_existir(conn, "intervencoes", "created_by INTEGER")
         _adicionar_coluna_se_nao_existir(conn, "intervencoes", "updated_by INTEGER")
         _adicionar_coluna_se_nao_existir(conn, "intervencoes", "ativo BOOLEAN DEFAULT TRUE")

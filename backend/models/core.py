@@ -14,6 +14,8 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     perfil = Column(String, default="farmaceutico")  # admin, farmaceutico, leitor
     categoria_profissional = Column(String, default="Farmacêutico")
+    crf = Column(String, nullable=True)
+    assinatura_digital = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     intervencoes = relationship(
     "Intervencao",
