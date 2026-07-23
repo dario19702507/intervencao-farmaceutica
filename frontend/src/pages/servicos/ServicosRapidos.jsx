@@ -25,6 +25,11 @@ export default function ServicosRapidos({ setActivePage }) {
   const [pacienteClinicoCriado, setPacienteClinicoCriado] = useState(null);
   const [atendimentoCriado, setAtendimentoCriado] = useState(null);
   const [tipoServico, setTipoServico] = useState("pa");
+  const [dataAtendimento, setDataAtendimento] = useState(() => {
+    const agora = new Date();
+    agora.setMinutes(agora.getMinutes() - agora.getTimezoneOffset());
+    return agora.toISOString().slice(0, 16);
+  });
   const [convertendo, setConvertendo] = useState(false);
 
   const [pacientesSimplificados, setPacientesSimplificados] = useState([]);
@@ -177,6 +182,7 @@ async function carregarHistoricoPaciente(pacienteId) {
       const response = await api.post("/consultorio/atendimento-rapido", {
         paciente_simplificado_id: pacienteCriado.id,
         tipo_servico: tipoServico,
+        data_atendimento: dataAtendimento ? new Date(dataAtendimento).toISOString() : null,
         observacoes: `Atendimento rápido - ${tipoServico}`,
       });
 
@@ -860,6 +866,18 @@ const avaliacaoBio = obterRiscoBioimpedancia();
               </button>
             )}
           </div>
+
+          <label className="field-label">
+            Data e hora do atendimento
+            <input
+              className="input"
+              type="datetime-local"
+              value={dataAtendimento}
+              max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+              onChange={(e) => setDataAtendimento(e.target.value)}
+            />
+            <small className="muted">Use a data real do atendimento, inclusive para registros retrospectivos.</small>
+          </label>
 
           <div className="grid-2">
             <select

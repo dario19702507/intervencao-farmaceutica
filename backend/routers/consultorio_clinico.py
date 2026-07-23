@@ -188,9 +188,15 @@ def criar_evolucao_clinica(
     if not prontuario:
         raise HTTPException(status_code=404, detail="Prontuário não encontrado")
 
+    payload = dados.model_dump()
+    data_evolucao = payload.get("data_evolucao") or datetime.now()
+    if data_evolucao > datetime.now() + timedelta(minutes=5):
+        raise HTTPException(status_code=400, detail="A data do atendimento não pode estar no futuro")
+    payload["data_evolucao"] = data_evolucao
+
     nova_evolucao = EvolucaoClinica(
         prontuario_id=prontuario_id,
-        **dados.model_dump()
+        **payload
     )
 
     db.add(nova_evolucao)

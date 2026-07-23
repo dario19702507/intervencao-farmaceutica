@@ -79,6 +79,9 @@ export default function Consultorio({ usuario }) {
     horarios_uso: "",
     uso_se_necessario: false,
     indicacao: "",
+    uso_off_label: "NAO_AVALIADO",
+    justificativa_off_label: "",
+    evidencia_off_label: "",
     uso_continuo: true,
     adesao_referida: "",
     observacoes: "",
@@ -105,6 +108,9 @@ export default function Consultorio({ usuario }) {
     horarios_uso: "",
     uso_se_necessario: false,
     indicacao: "",
+    uso_off_label: "NAO_AVALIADO",
+    justificativa_off_label: "",
+    evidencia_off_label: "",
     uso_continuo: true,
     adesao_referida: "",
     observacoes: "",
@@ -119,6 +125,7 @@ export default function Consultorio({ usuario }) {
   });
 
   const [novaEvolucao, setNovaEvolucao] = useState({
+    data_evolucao: (() => { const agora = new Date(); agora.setMinutes(agora.getMinutes() - agora.getTimezoneOffset()); return agora.toISOString().slice(0, 16); })(),
     tipo_atendimento: "Consulta farmacêutica",
     queixa_principal: "",
     historia_breve: "",
@@ -1090,10 +1097,12 @@ async function carregarCatalogoMedicamentos(busca = "") {
 
       await api.post(`/consultorio/prontuario/${detalhe.prontuario.id}/evolucao`, {
         ...novaEvolucao,
+        data_evolucao: novaEvolucao.data_evolucao ? new Date(novaEvolucao.data_evolucao).toISOString() : null,
         data_retorno_sugerida: novaEvolucao.data_retorno_sugerida || null,
       });
 
       setNovaEvolucao({
+        data_evolucao: (() => { const agora = new Date(); agora.setMinutes(agora.getMinutes() - agora.getTimezoneOffset()); return agora.toISOString().slice(0, 16); })(),
         tipo_atendimento: "Consulta farmacêutica",
         queixa_principal: "",
         historia_breve: "",
@@ -2065,6 +2074,7 @@ async function concluirPlanoCuidado(plano) {
                   {medicamentos.map((m) => (
                     <div className="med-card" key={m.id}>
                       <strong>{m.nome_medicamento}</strong>
+                      {m.uso_off_label === "SIM" && <span className="status-badge warning">OFF-LABEL</span>}
                       <p>
                         {m.dose || "Dose não informada"} · {m.via || "Via não informada"} ·{" "}
                         {m.frequencia_uso || m.frequencia || "Frequência não informada"}
@@ -2075,6 +2085,10 @@ async function concluirPlanoCuidado(plano) {
                       <p className="muted">
                         Indicação: {m.indicacao || "não informada"} · Adesão:{" "}
                         {m.adesao_referida || "não informada"}
+                      </p>
+                      <p className="muted">
+                        Uso off-label: {m.uso_off_label === "SIM" ? "Sim" : m.uso_off_label === "NAO" ? "Não" : "Não avaliado"}
+                        {m.justificativa_off_label ? ` · Justificativa: ${m.justificativa_off_label}` : ""}
                       </p>
                       <p className="muted">
                         Situação: <strong>{m.status_farmacoterapia || (m.ativo ? "EM_USO" : "INATIVO")}</strong>
@@ -2219,6 +2233,23 @@ async function concluirPlanoCuidado(plano) {
                       })
                     }
                   />
+
+                  <select
+                    className="input"
+                    value={novoMedicamento.uso_off_label}
+                    onChange={(e) => setNovoMedicamento({ ...novoMedicamento, uso_off_label: e.target.value })}
+                  >
+                    <option value="NAO_AVALIADO">Uso off-label: não avaliado</option>
+                    <option value="NAO">Uso off-label: não</option>
+                    <option value="SIM">Uso off-label: sim</option>
+                  </select>
+
+                  {novoMedicamento.uso_off_label === "SIM" && (
+                    <>
+                      <textarea className="textarea" placeholder="Justificativa clínica do uso off-label *" value={novoMedicamento.justificativa_off_label} onChange={(e) => setNovoMedicamento({ ...novoMedicamento, justificativa_off_label: e.target.value })} />
+                      <textarea className="textarea" placeholder="Evidência, protocolo ou referência (opcional)" value={novoMedicamento.evidencia_off_label} onChange={(e) => setNovoMedicamento({ ...novoMedicamento, evidencia_off_label: e.target.value })} />
+                    </>
+                  )}
 
                   <select
                     className="input"
@@ -3463,6 +3494,12 @@ async function concluirPlanoCuidado(plano) {
                 {mostrarFormularioEvolucao && (
               <div className="form-card">
                 <h3>Nova evolução clínica</h3>
+
+                <label className="field-label">
+                  Data e hora do atendimento
+                  <input className="input" type="datetime-local" value={novaEvolucao.data_evolucao} onChange={(e) => setNovaEvolucao({ ...novaEvolucao, data_evolucao: e.target.value })} />
+                  <small className="muted">Permite registrar atendimentos anteriores preservando a data real do lançamento no sistema.</small>
+                </label>
 
                 <input
                   className="input"

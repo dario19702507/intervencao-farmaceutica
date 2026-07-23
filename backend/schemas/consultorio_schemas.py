@@ -21,6 +21,7 @@ class PacienteSimplificadoCreate(BaseModel):
 class AtendimentoRapidoCreate(BaseModel):
     paciente_simplificado_id: int
     tipo_servico: str
+    data_atendimento: Optional[datetime] = None
     observacoes: Optional[str] = None
 
 
@@ -105,6 +106,7 @@ class PacienteClinicoDadosClinicosUpdate(BaseModel):
 
 
 class EvolucaoClinicaCreate(BaseModel):
+    data_evolucao: Optional[datetime] = None
     tipo_atendimento: Optional[str] = None
 
     queixa_principal: Optional[str] = None
@@ -143,6 +145,9 @@ class MedicamentoUsoCreate(BaseModel):
     horarios_uso: Optional[str] = None
     uso_se_necessario: bool = False
     indicacao: Optional[str] = None
+    uso_off_label: str = "NAO_AVALIADO"
+    justificativa_off_label: Optional[str] = None
+    evidencia_off_label: Optional[str] = None
     uso_continuo: bool = True
     adesao_referida: Optional[str] = None
     observacoes: Optional[str] = None    

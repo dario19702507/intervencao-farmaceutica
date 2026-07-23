@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -43,6 +45,7 @@ router = APIRouter(
 def criar_atendimento_rapido(
     atendimento: AtendimentoRapidoCreate,
     db: Session = Depends(get_db_consultorio),
+    current: UserConsultorio = Depends(get_current_user_consultorio),
 ):
     paciente = db.query(PacienteSimplificado).filter(
         PacienteSimplificado.id == atendimento.paciente_simplificado_id
@@ -51,7 +54,14 @@ def criar_atendimento_rapido(
     if not paciente:
         raise HTTPException(status_code=404, detail="Paciente simplificado não encontrado")
 
-    novo = AtendimentoRapido(**atendimento.model_dump())
+    exigir_pode_registrar(current)
+    payload = atendimento.model_dump()
+    data_atendimento = payload.get("data_atendimento") or datetime.now()
+    if data_atendimento > datetime.now() + timedelta(minutes=5):
+        raise HTTPException(status_code=400, detail="A data do atendimento não pode estar no futuro")
+    payload["data_atendimento"] = data_atendimento
+
+    novo = AtendimentoRapido(**payload)
     db.add(novo)
     db.commit()
     db.refresh(novo)

@@ -816,9 +816,12 @@ def svc_orientacoes_farmaceuticas_pdf(paciente_clinico_id: int, db: Session = No
 
     elementos.append(Paragraph("Medicamentos em uso", styles["Heading2"]))
     if medicamentos:
-        linhas = [["Medicamento", "Dose / via / frequência", "Horários"]]
+        linhas = [["Medicamento", "Dose / via / frequência", "Horários / avaliação"]]
         for m in medicamentos:
-            linhas.append([m.nome_medicamento or "—", f"{m.dose or '—'} · {m.via or '—'} · {m.frequencia_uso or m.frequencia or '—'}", m.horarios_uso or "—"])
+            avaliacao = m.horarios_uso or "—"
+            if getattr(m, "uso_off_label", "NAO_AVALIADO") == "SIM":
+                avaliacao = f"{avaliacao} · OFF-LABEL: {getattr(m, 'justificativa_off_label', None) or 'justificativa não informada'}"
+            linhas.append([m.nome_medicamento or "—", f"{m.dose or '—'} · {m.via or '—'} · {m.frequencia_uso or m.frequencia or '—'}", avaliacao])
         elementos.append(_tabela_simples(linhas, [180, 190, 130]))
     else:
         elementos.append(Paragraph("Nenhum medicamento ativo registrado.", styles["Normal"]))

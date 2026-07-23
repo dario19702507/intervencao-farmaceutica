@@ -146,6 +146,19 @@ def _normalizar_payload_medicamento(dados: MedicamentoUsoCreate, db: Session) ->
         payload["frequencia_uso"] = "se necessário"
         payload["frequencia"] = payload.get("frequencia") or "se necessário"
 
+    status_off_label = (payload.get("uso_off_label") or "NAO_AVALIADO").upper()
+    if status_off_label not in {"NAO_AVALIADO", "NAO", "SIM"}:
+        raise HTTPException(status_code=400, detail="Situação de uso off-label inválida")
+    payload["uso_off_label"] = status_off_label
+    if status_off_label == "SIM":
+        if not (payload.get("indicacao") or "").strip():
+            raise HTTPException(status_code=400, detail="Informe a indicação clínica do uso off-label")
+        if not (payload.get("justificativa_off_label") or "").strip():
+            raise HTTPException(status_code=400, detail="Informe a justificativa do uso off-label")
+    else:
+        payload["justificativa_off_label"] = None
+        payload["evidencia_off_label"] = None
+
     return payload
 
 
@@ -157,6 +170,7 @@ def opcoes_farmacoterapia(current=Depends(get_current_user_consultorio)):
         "horarios_padrao": HORARIOS_PADRAO,
         "frequencias_uso": FREQUENCIAS_USO,
         "adesao_referida": ["boa", "regular", "ruim", "nao_avaliada"],
+        "uso_off_label": ["NAO_AVALIADO", "NAO", "SIM"],
         "orientacao_catalogo": "Use catalogo_medicamento_id quando houver correspondência; mantenha nome_medicamento para registro manual quando necessário.",
         "status_farmacoterapia": STATUS_FARMACOTERAPIA,
         "motivos_troca": MOTIVOS_TROCA,

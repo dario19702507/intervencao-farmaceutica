@@ -27,8 +27,6 @@ def aplicar_migracoes_simples() -> None:
             "users",
             "categoria_profissional VARCHAR DEFAULT 'Farmacêutico'",
         )
-        _adicionar_coluna_se_nao_existir(conn, "users", "crf VARCHAR")
-        _adicionar_coluna_se_nao_existir(conn, "users", "assinatura_digital TEXT")
         _adicionar_coluna_se_nao_existir(conn, "intervencoes", "created_by INTEGER")
         _adicionar_coluna_se_nao_existir(conn, "intervencoes", "updated_by INTEGER")
         _adicionar_coluna_se_nao_existir(conn, "intervencoes", "ativo BOOLEAN DEFAULT TRUE")
@@ -40,6 +38,9 @@ def aplicar_migracoes_simples() -> None:
         _adicionar_coluna_se_nao_existir(conn, "medicamentos_uso", "frequencia_uso VARCHAR")
         _adicionar_coluna_se_nao_existir(conn, "medicamentos_uso", "horarios_uso TEXT")
         _adicionar_coluna_se_nao_existir(conn, "medicamentos_uso", "uso_se_necessario BOOLEAN DEFAULT FALSE")
+        _adicionar_coluna_se_nao_existir(conn, "medicamentos_uso", "uso_off_label VARCHAR DEFAULT 'NAO_AVALIADO' NOT NULL")
+        _adicionar_coluna_se_nao_existir(conn, "medicamentos_uso", "justificativa_off_label TEXT")
+        _adicionar_coluna_se_nao_existir(conn, "medicamentos_uso", "evidencia_off_label TEXT")
 
         # Passo 14E.2C.5B.1 — ciclo de vida da farmacoterapia
         _adicionar_coluna_se_nao_existir(conn, "medicamentos_uso", "status_farmacoterapia VARCHAR DEFAULT 'EM_USO'")

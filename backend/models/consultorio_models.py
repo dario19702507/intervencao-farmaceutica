@@ -305,6 +305,12 @@ class MedicamentoUso(BaseConsultorio):
     uso_se_necessario = Column(Boolean, default=False)
     indicacao = Column(String, nullable=True)
 
+    # Avaliação farmacêutica de uso off-label.
+    # Valores: NAO_AVALIADO, NAO, SIM.
+    uso_off_label = Column(String, nullable=False, default="NAO_AVALIADO")
+    justificativa_off_label = Column(Text, nullable=True)
+    evidencia_off_label = Column(Text, nullable=True)
+
     uso_continuo = Column(Boolean, default=True)
     adesao_referida = Column(String, nullable=True)
     observacoes = Column(Text, nullable=True)
@@ -379,8 +385,6 @@ class UserConsultorio(BaseConsultorio):
     hashed_password = Column(String, nullable=False)
     perfil = Column(String, nullable=True)
     categoria_profissional = Column(String, nullable=True)
-    crf = Column(String, nullable=True)
-    assinatura_digital = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class ResolucaoAlertaClinico(BaseConsultorio):
